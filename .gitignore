@@ -1,1 +1,8 @@
 note-vistec-repair-system/
+node_modules/
+dist/
+.env
+.env.local
+functions/node_modules/
+.firebase/
+*.log

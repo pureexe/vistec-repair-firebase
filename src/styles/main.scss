@@ -1,0 +1,133 @@
+// Bulma 1.x themed with VISTEC colors
+@use "bulma/sass/utilities" with (
+  $primary: #582E91,
+  $link: #582E91,
+  $danger: #A0223A,
+  $family-sans-serif: ('Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif),
+  $radius: 0.5rem,
+  $radius-large: 0.85rem
+);
+@use "bulma/sass/base";
+@use "bulma/sass/elements";
+@use "bulma/sass/form";
+@use "bulma/sass/components";
+@use "bulma/sass/grid";
+@use "bulma/sass/layout";
+@use "bulma/sass/helpers";
+// Light (white) theme only — do not follow the OS dark mode
+@use "bulma/sass/utilities/initial-variables" as iv;
+@use "bulma/sass/themes/light";
+@use "bulma/sass/themes/setup";
+#{iv.$variables-host} {
+  @include light.light-theme;
+  @include setup.setup-theme;
+}
+
+:root {
+  --vistec-purple: #582E91;
+  --vistec-red: #A0223A;
+  --vistec-purple-soft: #f3eefa;
+  --vistec-red-soft: #fbeef1;
+}
+
+// White theme only (client request)
+html { color-scheme: light; background: #f7f6fa; }
+body { min-height: 100vh; display: flex; flex-direction: column; }
+#app { flex: 1; display: flex; flex-direction: column; }
+main.app-main { flex: 1; padding-bottom: 5rem; }
+
+.navbar.is-vistec {
+  background: linear-gradient(90deg, var(--vistec-purple) 0%, #6b3aa8 60%, var(--vistec-red) 140%);
+  .navbar-item, .navbar-link { color: #fff; }
+  .navbar-item:hover, a.navbar-item:hover, .navbar-link:hover { background: rgba(255,255,255,.12); color: #fff; }
+  .navbar-burger { color: #fff; }
+  .navbar-menu.is-active { background: #fff; .navbar-item, .navbar-link { color: #363636; } }
+  .brand-title { font-weight: 700; letter-spacing: .02em; }
+  .brand-sub { font-size: .75rem; opacity: .85; }
+}
+
+.hero.is-vistec {
+  background: linear-gradient(135deg, var(--vistec-purple) 0%, #6d3db0 55%, var(--vistec-red) 120%);
+  color: #fff;
+  .title, .subtitle { color: #fff; }
+}
+
+.has-text-vistec-red { color: var(--vistec-red) !important; }
+.has-background-vistec-soft { background: var(--vistec-purple-soft) !important; }
+.accent-bar { height: 4px; background: linear-gradient(90deg, var(--vistec-purple), var(--vistec-red)); border-radius: 4px; }
+
+.card { border-radius: .85rem; box-shadow: 0 2px 10px rgba(88,46,145,.08); }
+.card.is-clickable { cursor: pointer; transition: transform .1s, box-shadow .1s; }
+.card.is-clickable:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(88,46,145,.15); }
+
+.box.action-box { border-top: 4px solid var(--vistec-purple); }
+
+.tracking-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .15em;
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--vistec-purple);
+}
+
+// Status stepper
+.steps {
+  display: flex; gap: .25rem; margin: 1rem 0;
+  .step { flex: 1; text-align: center; font-size: .75rem; color: #999;
+    .dot { width: 2rem; height: 2rem; border-radius: 50%; margin: 0 auto .35rem; display: flex; align-items: center; justify-content: center; background: #e8e5ee; color: #888; }
+    &.is-done .dot { background: var(--vistec-purple); color: #fff; }
+    &.is-done { color: var(--vistec-purple); font-weight: 600; }
+    &.is-current .dot { box-shadow: 0 0 0 4px rgba(88,46,145,.2); }
+    &.is-problem .dot { background: var(--vistec-red); color: #fff; }
+  }
+}
+
+// Timeline
+.timeline-list {
+  list-style: none; margin: 0; padding: 0 0 0 1.1rem; border-left: 2px solid #e3dcef;
+  li { position: relative; padding: 0 0 1rem .75rem;
+    &::before { content: ''; position: absolute; left: -1.55rem; top: .3rem; width: .8rem; height: .8rem; border-radius: 50%; background: var(--vistec-purple); border: 2px solid #fff; }
+    &.is-problem::before { background: var(--vistec-red); }
+    &.is-internal::before { background: #b5b5b5; }
+  }
+}
+
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: .5rem;
+  .photo { position: relative; aspect-ratio: 1; border-radius: .5rem; overflow: hidden; background: #eee;
+    img { width: 100%; height: 100%; object-fit: cover; }
+    .delete { position: absolute; top: 4px; right: 4px; }
+  }
+}
+
+.kpi { text-align: center; .num { font-size: 2rem; font-weight: 700; color: var(--vistec-purple); line-height: 1.1; } .lbl { font-size: .8rem; color: #777; } }
+.bar-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; font-size: .85rem;
+  .lbl { width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { flex: 1; height: .8rem; background: #eee; border-radius: 1rem; overflow: hidden; span { display: block; height: 100%; background: linear-gradient(90deg, var(--vistec-purple), #8a5cc7); } }
+  .val { width: 2.5rem; text-align: right; font-weight: 600; }
+}
+
+.login-btn { justify-content: flex-start !important; .icon { margin-right: .5rem !important; } }
+.button.wrap, .login-btn { white-space: normal; height: auto; min-height: 2.5em; text-align: left; }
+.tracking-code::placeholder { letter-spacing: normal; font-weight: 400; font-family: 'Sarabun', sans-serif; font-size: .95rem; }
+
+// Bottom tab bar for phones
+.mobile-tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; background: #fff; border-top: 1px solid #eee;
+  display: flex; padding-bottom: env(safe-area-inset-bottom);
+  a { flex: 1; text-align: center; padding: .45rem 0 .35rem; font-size: .7rem; color: #777;
+    .icon { display: block; margin: 0 auto; font-size: 1.35rem; height: 1.6rem; }
+    &.router-link-active { color: var(--vistec-purple); font-weight: 600; }
+  }
+}
+@media screen and (min-width: 1024px) { .mobile-tabbar { display: none; } main.app-main { padding-bottom: 2rem; } }
+
+@media screen and (max-width: 768px) {
+  .section { padding: 1.25rem .9rem; }
+  .title.is-3 { font-size: 1.5rem; }
+  .buttons.is-stacked-mobile .button { width: 100%; }
+}
+
+@media print {
+  .navbar, .mobile-tabbar, .no-print { display: none !important; }
+  .qr-card { break-inside: avoid; }
+}

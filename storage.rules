@@ -1,0 +1,21 @@
+rules_version = '2';
+// Copy into Firebase console → Storage → Rules
+// Photos are compressed in the browser to ≤1280×720 WebP before upload (src/services/images.js).
+// Storage rules cannot read the Realtime Database, so ownership is tracked with customMetadata.uid.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /jobs/{jobId}/{file} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && file.matches('^[-_A-Za-z0-9]+[.]webp$')
+        && request.resource.contentType == 'image/webp'
+        && request.resource.size < 400 * 1024
+        && request.resource.metadata.uid == request.auth.uid;
+      // only the uploader can delete the file (staff removing a photo just unlinks it in the DB)
+      allow delete: if request.auth != null && resource.metadata.uid == request.auth.uid;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
