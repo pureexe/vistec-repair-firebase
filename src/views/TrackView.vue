@@ -6,7 +6,7 @@ import { ref as dbRef, get } from 'firebase/database'
 import { db } from '../firebase.js'
 import { listenTracking, addComment, actorOf } from '../services/jobs.js'
 import { normalizeCode, toArray } from '../services/util.js'
-import { master } from '../stores/master.js'
+import { master, placeName } from '../stores/master.js'
 import { authState, isStaff } from '../stores/auth.js'
 import { ln, fmtDate } from '../i18n/index.js'
 import { toastError } from '../stores/toast.js'
@@ -88,7 +88,7 @@ async function share() {
           <table class="table is-fullwidth is-narrow is-size-7 mb-2">
             <tbody>
               <tr><th>{{ $t('request.jobType') }}</th><td>{{ ln(master.jobTypes[data.jobTypeId]) }}</td></tr>
-              <tr><th>{{ $t('jobs.location') }}</th><td>{{ ln(master.buildings[data.buildingId]) }}<template v-if="master.areas[data.areaId]"> › {{ ln(master.areas[data.areaId]) }}</template></td></tr>
+              <tr><th>{{ $t('jobs.location') }}</th><td>{{ placeName(data) }}</td></tr>
               <tr><th>{{ $t('track.reported') }}</th><td>{{ fmtDate(data.createdAt) }}</td></tr>
               <tr><th>{{ $t('track.updated') }}</th><td>{{ fmtDate(data.updatedAt) }}</td></tr>
             </tbody>

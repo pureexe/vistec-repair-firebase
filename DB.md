@@ -34,8 +34,10 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
     email, name, company, role ("contractor" | "technician"), invitedBy, createdAt
     -> on first sign-in with that (verified) email, the client upgrades /users/{uid}/role
 
+/sites/{siteId}                    organisation / campus: THEENCONY, PTTEP, VISTEC, KVIS
+    code, nameTh, nameEn, active, order
 /buildings/{buildingId}
-    code ("VISTEC-A"), nameTh, nameEn, lat, lng, active, order
+    siteId, code ("VISTEC-A"), nameTh, nameEn, lat, lng, active, order
 /areas/{areaId}
     buildingId, nameTh, nameEn, active, order       (floor / room / zone inside a building)
 /jobTypes/{typeId}
@@ -48,7 +50,7 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
     trackingCode    "K7P3QX9M"   (8 chars, random, unguessable — key of /tracking)
     status          "new" | "assigned" | "in_progress" | "on_hold" | "completed" | "cancelled"
     priority        "normal" | "urgent" | "low" | "callback"
-    jobTypeId, buildingId, areaId, locationDetail
+    jobTypeId, siteId, buildingId, areaId, locationDetail
     gps             { lat, lng, accuracy, at }        (from phone, optional)
     description
     reporterUid                                       (top level: needed for query rules)
@@ -61,10 +63,13 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
     hold            { reason, note, resumeDate, partsEta, since }   (only while status == on_hold)
                     reason: "waiting_parts" | "budget" | "contractor" | "access" | "other"
     workDetail      what the technician did
-    photos/{photoId} { store: "storage"|"rtdb", url, path, w, h, bytes, by, at }
+    photos/{photoId} { store: "storage"|"rtdb", url, path, w, h, bytes, by, at }   (imported: id cpfm_f{f_id}, by "cpfm", + name)
+    files/{fileId}   { name, url, type, bytes, by, at }   links to attachments left on the old CPFM server (importer only)
+    idx             { s, o, si, sis, sio, b, bs, bo }   paging sort keys, see below
                     storage: file at jobs/{jobId}/{photoId}.webp with customMetadata.uid = uploader
                     rtdb:    base64 data URL at /jobPhotos/{jobId}/{photoId}
     createdAt, updatedAt, completedAt
+    cpfm            { id, location, type, by, rating, hash }   only on jobs imported from the old system (id cpfm_{task_id})
 
 /jobEvents/{jobId}/{eventId}       activity log / timeline (append only)
     at, byUid, byName
@@ -72,10 +77,11 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
     from, to  (status change)
     note
     public    true -> also copied into /tracking timeline and e-mailed to the reporter
+    imported  true on events copied from CPFM (byUid "cpfm") — never e-mailed
 
 /tracking/{trackingCode}           PUBLIC projection — no personal data. Readable by anyone
                                    who knows the code; the list itself is not readable.
-    jobId, jobNo, status, jobTypeId, buildingId, areaId,
+    jobId, jobNo, status, jobTypeId, siteId, buildingId, areaId,
     createdAt, updatedAt, expectedDate, expectedNote, hold { reason, note, resumeDate, partsEta }
     timeline/{eventId} { at, type, to, note }
 
@@ -85,9 +91,26 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
     to, subject, jobId, eventId, state ("sent"|"error"|"skipped"), error, at
 ```
 
+## Paging the job list (`jobs/{id}/idx`)
+
+RTDB can filter and sort on one child only, so each job stores one sort key per filter combination
+(`src/services/jobIndex.js`). Each key is `"<filter value>|<createdAt, 16 digits>"`:
+
+| key | filter | example |
+|---|---|---|
+| `s` / `o` | status / open (`1`) or closed (`0`) | `on_hold\|0001790000000000` |
+| `si` / `sis` / `sio` | site, site + status, site + open | `cpfm_VISTEC\|on_hold\|…` |
+| `b` / `bs` / `bo` | the same for a building | |
+
+The list queries `orderByChild('idx/sis').startAt(prefix).endBefore(cursor).limitToLast(51)`, 50 per page, newest
+first. "All jobs, any status" uses `createdAt`. **Every write that changes `status`, `siteId` or `buildingId` must also
+write `idx`.** `applyJobChange` and `createJob` do this. The importer recomputes `idx` for every job (including app jobs)
+on each run, so a run of `npm run import:cpfm` also repairs keys.
+
 ## Indexes (`.indexOn`)
 
-- `/jobs`: `createdAt`, `status`, `reporterUid`, `assigneeUid`
+- `/jobs`: `createdAt`, `status`, `reporterUid`, `assigneeUid`, `siteId`, `jobNo`, `trackingCode`, `idx/{s,o,si,sis,sio,b,bs,bo}`
+- `/buildings`: `siteId`
 - `/areas`: `buildingId`
 - `/users`: `role`, `email`
 
@@ -99,6 +122,14 @@ The **first admin** must be set by hand in the Firebase console: `/users/{uid}/r
   Every public event is mirrored to `tracking/{code}/timeline/{e}`.
 - **E-mail:** Cloud Function `onJobEvent` triggers on `/jobEvents/{jobId}/{eventId}` create; sends to the
   reporter when `public == true`, and to admins/technicians on `created`. Logs into `/mail`.
+
+## Imported data (old CPFM system)
+
+`npm run import:cpfm` (see `CPFM_IMPORT.md`) writes sites, buildings, areas, job types, jobs, tracking and events
+with deterministic ids (`cpfm_…`) and a `cpfm` child, so re-runs update in place and the old system wins.
+It runs with the Admin SDK (bypasses rules). Clients can never write `jobs/*/cpfm` or `jobEvents/*/*/imported`.
+Imported jobs have `reporterUid` = the matching user's uid (same e-mail) or `"cpfm"`; `assigneeUid` is empty.
+`/config/cpfmImport` holds the last run's time and stats.
 
 ## Rule highlights (`database.rules.json`, generated by `scripts/build-rules.py`)
 

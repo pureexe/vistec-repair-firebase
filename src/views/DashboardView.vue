@@ -2,14 +2,16 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listenAllJobs } from '../services/jobs.js'
-import { master } from '../stores/master.js'
+import { master, activeSites } from '../stores/master.js'
 import { ln } from '../i18n/index.js'
 import { STATUSES, OPEN_STATUSES } from '../services/util.js'
 import StatusTag from '../components/StatusTag.vue'
 
 const { t, locale } = useI18n()
-const jobs = ref([])
-const unsub = listenAllJobs((j) => (jobs.value = j), 5000)
+const allJobs = ref([])
+const site = ref('')
+const jobs = computed(() => (site.value ? allJobs.value.filter((j) => (j.siteId || master.buildings[j.buildingId]?.siteId) === site.value) : allJobs.value))
+const unsub = listenAllJobs((j) => (allJobs.value = j), 5000)
 onBeforeUnmount(unsub)
 
 const monthKey = (ms) => { const d = new Date(ms); return d.getFullYear() * 12 + d.getMonth() }
@@ -59,7 +61,13 @@ const byMonth = computed(() => {
 <template>
   <section class="section">
     <div class="container">
-      <h1 class="title is-4">{{ $t('dashboard.title') }}</h1>
+      <div class="is-flex is-justify-content-space-between is-align-items-center is-flex-wrap-wrap mb-4" style="gap:.5rem">
+        <h1 class="title is-4 mb-0">{{ $t('dashboard.title') }}</h1>
+        <div v-if="activeSites.length > 1" class="select is-small"><select v-model="site">
+          <option value="">{{ $t('request.site') }}: {{ $t('common.all') }}</option>
+          <option v-for="s in activeSites" :key="s.id" :value="s.id">{{ ln(s) }}</option>
+        </select></div>
+      </div>
       <div class="columns is-mobile is-multiline">
         <div class="column is-6-mobile is-3-tablet"><div class="box kpi"><div class="num">{{ stats.thisMonth.n }}</div><div class="lbl">{{ $t('dashboard.thisMonth') }} · {{ $t('dashboard.done', { p: stats.thisMonth.p }) }}</div></div></div>
         <div class="column is-6-mobile is-3-tablet"><div class="box kpi"><div class="num">{{ stats.lastMonth.n }}</div><div class="lbl">{{ $t('dashboard.lastMonth') }} · {{ $t('dashboard.done', { p: stats.lastMonth.p }) }}</div></div></div>

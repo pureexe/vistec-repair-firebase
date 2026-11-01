@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { ref as dbRef, update } from 'firebase/database'
 import { db } from '../firebase.js'
 import { authState } from '../stores/auth.js'
-import { master, activeBuildings, activeJobTypes, areasOf } from '../stores/master.js'
+import { master, activeSites, activeBuildings, activeJobTypes, areasOf, buildingsOf } from '../stores/master.js'
 import { ln } from '../i18n/index.js'
 import { getPosition, nearestBuilding, mapUrl } from '../services/geo.js'
 import { createJob } from '../services/jobs.js'
@@ -17,7 +17,7 @@ const { t, locale } = useI18n()
 const route = useRoute()
 
 const form = reactive({
-  buildingId: '', areaId: '', locationDetail: '', jobTypeId: '', description: '', priority: 'normal',
+  siteId: '', buildingId: '', areaId: '', locationDetail: '', jobTypeId: '', description: '', priority: 'normal',
   name: '', phone: '', email: '', department: '', gps: null, pdpa: false
 })
 const images = ref([])
@@ -29,8 +29,16 @@ const gpsMsg = ref('')
 const fromQr = ref('')
 const copied = ref(false)
 
+const buildings = computed(() => buildingsOf(form.siteId, activeBuildings.value))
 const areas = computed(() => (form.buildingId ? areasOf(form.buildingId).filter((a) => a.active !== false) : []))
-watch(() => form.buildingId, (b, old) => { if (old && b !== old) form.areaId = '' })
+watch(() => form.buildingId, (b, old) => {
+  if (old && b !== old) form.areaId = ''
+  const site = master.buildings[b]?.siteId
+  if (site) form.siteId = site
+})
+watch(() => form.siteId, (s) => { if (s && form.buildingId && master.buildings[form.buildingId]?.siteId !== s) form.buildingId = '' })
+// one site only → nothing to choose
+watch(activeSites, (s) => { if (s.length === 1 && !form.siteId) form.siteId = s[0].id }, { immediate: true })
 
 function prefillContact() {
   const p = authState.profile || {}
@@ -43,8 +51,11 @@ function prefillContact() {
 watch(() => authState.profile, prefillContact, { immediate: true })
 
 function applyQuery() {
+  if (!master.loaded) return
+  const s = route.query.s && activeSites.value.find((x) => x.id === route.query.s || x.code === route.query.s)
+  if (s) { form.siteId = s.id; fromQr.value = ln(s) }
   const b = route.query.b
-  if (!b || !master.loaded) return
+  if (!b) return
   const found = activeBuildings.value.find((x) => x.id === b || x.code === b)
   if (found) {
     form.buildingId = found.id
@@ -63,7 +74,7 @@ async function useGps() {
     gpsState.value = 'ok'
     gpsMsg.value = t('request.gpsOk', { m: pos.accuracy })
     if (!fromQr.value) {
-      const near = nearestBuilding(pos, activeBuildings.value)
+      const near = nearestBuilding(pos, buildings.value)
       if (near && near.distance < 3000) {
         form.buildingId = near.building.id
         gpsMsg.value += ' — ' + t('request.gpsNearest', { name: ln(near.building), m: near.distance })
@@ -78,7 +89,7 @@ async function useGps() {
 onMounted(() => {
   applyQuery()
   // Pre-fill location from the phone GPS (skip if the QR code already told us where we are)
-  if (!route.query.b) useGps()
+  if (!route.query.b && !route.query.s) useGps()
 })
 
 async function submit() {
@@ -148,13 +159,24 @@ async function copy() { try { await navigator.clipboard.writeText(trackUrl.value
         </div>
 
         <div class="columns is-mobile is-multiline">
+          <div v-if="activeSites.length > 1" class="column is-12">
+            <div class="field">
+              <label class="label">{{ $t('request.site') }} *</label>
+              <div class="control"><div class="select is-fullwidth">
+                <select v-model="form.siteId">
+                  <option value="">{{ $t('request.selectPh') }}</option>
+                  <option v-for="s in activeSites" :key="s.id" :value="s.id">{{ ln(s) }}</option>
+                </select>
+              </div></div>
+            </div>
+          </div>
           <div class="column is-12-mobile is-6-tablet">
             <div class="field">
               <label class="label">{{ $t('request.building') }} *</label>
               <div class="control"><div class="select is-fullwidth">
                 <select v-model="form.buildingId" required>
                   <option value="" disabled>{{ $t('request.selectPh') }}</option>
-                  <option v-for="b in activeBuildings" :key="b.id" :value="b.id">{{ ln(b) }}</option>
+                  <option v-for="b in buildings" :key="b.id" :value="b.id">{{ ln(b) }}</option>
                 </select>
               </div></div>
             </div>

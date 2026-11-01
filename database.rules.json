@@ -63,9 +63,19 @@
         ".validate": "newData.hasChildren(['email', 'role']) && newData.child('role').val().matches(/^(contractor|technician)$/)"
       }
     },
+    "sites": {
+      ".read": true,
+      ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      "$id": {
+        ".validate": "newData.hasChildren(['nameTh'])"
+      }
+    },
     "buildings": {
       ".read": true,
       ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      ".indexOn": [
+        "siteId"
+      ],
       "$id": {
         ".validate": "newData.hasChildren(['nameTh'])"
       }
@@ -102,7 +112,18 @@
         "createdAt",
         "status",
         "reporterUid",
-        "assigneeUid"
+        "assigneeUid",
+        "siteId",
+        "jobNo",
+        "trackingCode",
+        "idx/s",
+        "idx/o",
+        "idx/si",
+        "idx/sis",
+        "idx/sio",
+        "idx/b",
+        "idx/bs",
+        "idx/bo"
       ],
       "$jobId": {
         ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && (data.child('reporterUid').val() == auth.uid || data.child('assigneeUid').val() == auth.uid))",
@@ -122,6 +143,9 @@
         },
         "jobTypeId": {
           ".validate": "newData.isString() && root.child('jobTypes').child(newData.val()).exists()"
+        },
+        "siteId": {
+          ".validate": "newData.isString() && root.child('sites').child(newData.val()).exists()"
         },
         "buildingId": {
           ".validate": "newData.isString() && root.child('buildings').child(newData.val()).exists()"
@@ -218,7 +242,7 @@
         "photos": {
           "$pid": {
             ".write": "auth != null && data.parent().parent().child('reporterUid').val() == auth.uid",
-            ".validate": "newData.hasChildren(['store', 'w', 'h', 'bytes']) && newData.child('w').val() <= 1280 && newData.child('h').val() <= 1280 && newData.child('bytes').val() <= 409600 && (newData.parent().numChildren() <= 6)"
+            ".validate": "newData.hasChildren(['store', 'w', 'h', 'bytes']) && newData.child('w').val() <= 1280 && newData.child('h').val() <= 1280 && newData.child('bytes').val() <= 409600"
           }
         },
         "createdAt": {
@@ -230,6 +254,17 @@
         },
         "completedAt": {
           ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "idx": {
+          "$k": {
+            ".validate": "$k.matches(/^(s|o|si|sis|sio|b|bs|bo)$/) && newData.isString() && newData.val().length <= 200"
+          }
+        },
+        "files": {
+          ".validate": false
+        },
+        "cpfm": {
+          ".validate": false
         },
         "$other": {
           ".validate": false
@@ -259,6 +294,9 @@
           },
           "public": {
             ".validate": "newData.isBoolean()"
+          },
+          "imported": {
+            ".validate": false
           }
         }
       }

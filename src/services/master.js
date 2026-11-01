@@ -24,9 +24,11 @@ export async function seedDefaults() {
   DEFAULT_JOB_TYPES.forEach(([th, en, icon], i) => {
     updates[`jobTypes/${push(dbRef(db, 'jobTypes')).key}`] = { nameTh: th, nameEn: en, icon, active: true, order: i + 1 }
   })
+  const sId = push(dbRef(db, 'sites')).key
+  updates[`sites/${sId}`] = { code: 'VISTEC', nameTh: 'สถาบันวิทยสิริเมธี', nameEn: 'VISTEC', active: true, order: 1 }
   const bId = push(dbRef(db, 'buildings')).key
   // VISTEC Wangchan campus (approx.). Admin should refine per building.
-  updates[`buildings/${bId}`] = { code: 'VISTEC', nameTh: 'สถาบันวิทยสิริเมธี (VISTEC)', nameEn: 'VISTEC', lat: 12.8862, lng: 101.4239, active: true, order: 1 }
+  updates[`buildings/${bId}`] = { siteId: sId, code: 'VISTEC', nameTh: 'สถาบันวิทยสิริเมธี (VISTEC)', nameEn: 'VISTEC', lat: 12.8862, lng: 101.4239, active: true, order: 1 }
   ;['อาคารสำนักงาน', 'อาคารวิจัย', 'หอพัก'].forEach((th, i) => {
     updates[`areas/${push(dbRef(db, 'areas')).key}`] = { buildingId: bId, nameTh: th, nameEn: ['Office building', 'Research building', 'Residence'][i], active: true, order: i + 1 }
   })

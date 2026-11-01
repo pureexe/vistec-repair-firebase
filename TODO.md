@@ -1,7 +1,7 @@
 # TODO.md — progress tracker
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` needs the client
-Last updated: 2026-10-21 (Claude, first build)
+Last updated: 2026-11-01 (Claude, CPFM import + multi-site)
 
 ## Phase 0 — planning
 - [x] Read notes (`note-vistec-repair-system/*.md`)
@@ -32,7 +32,7 @@ Last updated: 2026-10-21 (Claude, first build)
 - [x] Printable QR code per building / area → pre-filled request form
 - [x] Dashboard (KPIs, 12-month chart, by status / type / building / assignee, on hold, overdue)
 - [x] Rules: `database.rules.json` (generated), `storage.rules`, emulator tests in `tests/`
-- [ ] Run `tests/` against the emulator (couldn't download the emulator in the build sandbox) — run it on a dev machine
+- [x] Run `tests/` against the emulator — 46/46 pass (2026-11-01)
 - [ ] End-to-end test with the real Firebase project once `.env` is filled
 
 ## Blockers found while testing sign-up (2026-11-01)
@@ -61,6 +61,21 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
   unlinked after a provider is turned off). All four off shows a warning instead of an empty card.
   `.env` currently ships Google and the e-mail link as `false` until those providers are enabled.
 
+## Phase 3b — old system import + multi-site (2026-11-01)
+- [x] Sites level: `/sites` → buildings.siteId → areas; jobs/tracking carry `siteId`. Site picker in the request form (hidden when 1 site),
+      `?s=CODE` QR param, site filter in jobs / dashboard / QR / master data, `placeName()` everywhere. Rules + tests updated.
+- [x] `npm run import:cpfm` (`scripts/import-cpfm.mjs`, guide `CPFM_IMPORT.md`): all 4 sites (THEENCONY, PTTEP, VISTEC, KVIS),
+      ~25.5k jobs + activity log, idempotent (`cpfm_` ids + payload hash), old system wins. Tested end-to-end on the emulator.
+- [x] `onJobEvent` skips `imported` events (no mail storm)
+- [!] Client: generate a service-account key, re-publish `database.rules.json`, then run the import against the live DB
+- [x] Staff job list is paged in the database (50/page, prev/next) with `jobs/*/idx` sort keys. Filters: status / open,
+      site, building. Enter in search = exact job no. / tracking code over all jobs. Contractors and "assigned to me" still load their own list.
+- [x] Attachments: photos → ≤1280×720 WebP in Storage (or RTDB), HEIC via heic-convert. Videos/other → links (`jobs/*/files`)
+      shown on the job page. Found that CPFM's `attach_files` column is always 0. The real data is in `document_action.php`.
+- [ ] Dashboard still loads the newest 5000 jobs, so its totals are not all-time. Needs aggregates (`/stats`, kept by the
+      importer + a Cloud Function on job writes).
+- [ ] Before CPFM is switched off: copy the `jobs/*/files` links (videos, PDFs) into Storage.
+
 ## Phase 4 — later
 - [ ] Satisfaction survey after completion (6 criteria, see CPFM §4.2) — e-mail link + `/survey/:code`
 - [ ] SLA per job type + due date / overdue counter
@@ -68,5 +83,5 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
 - [ ] Materials / stock card
 - [ ] Preventive maintenance plans + calendar
 - [ ] Reports + Excel export, print work-order sheet
-- [ ] Import history from CPFM (~24k jobs)? Ask the client
+- [ ] Import CPFM attachments (none seen in 2000 sampled jobs), ratings → survey, materials/expenses tabs
 - [ ] PWA (installable, offline shell)

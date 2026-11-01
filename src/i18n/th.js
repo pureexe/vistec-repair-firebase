@@ -6,6 +6,7 @@ export default {
     profile: 'โปรไฟล์', login: 'เข้าสู่ระบบ', logout: 'ออกจากระบบ', more: 'เพิ่มเติม'
   },
   common: {
+    prev: 'ก่อนหน้า', next: 'ถัดไป', clear: 'ล้าง',
     save: 'บันทึก', cancel: 'ยกเลิก', close: 'ปิด', add: 'เพิ่ม', edit: 'แก้ไข', delete: 'ลบ', search: 'ค้นหา',
     loading: 'กำลังโหลด…', confirm: 'ยืนยัน', back: 'ย้อนกลับ', all: 'ทั้งหมด', none: '-', yes: 'ใช่', no: 'ไม่',
     copy: 'คัดลอก', copied: 'คัดลอกแล้ว', print: 'พิมพ์', optional: 'ไม่บังคับ', required: 'จำเป็น',
@@ -59,7 +60,7 @@ export default {
     partsEta: 'คาดว่าอะไหล่จะมาถึง', resumeDate: 'คาดว่าจะดำเนินการต่อ', note: 'รายละเอียดเพิ่มเติม (ผู้แจ้งจะเห็น)'
   },
   request: {
-    title: 'แบบฟอร์มแจ้งซ่อม', building: 'อาคาร', area: 'พื้นที่ / ชั้น / ห้อง', locationDetail: 'รายละเอียดตำแหน่ง',
+    title: 'แบบฟอร์มแจ้งซ่อม', site: 'โครงการ', building: 'อาคาร', area: 'พื้นที่ / ชั้น / ห้อง', locationDetail: 'รายละเอียดตำแหน่ง',
     locationDetailPh: 'เช่น ห้อง 301 ข้างลิฟต์', jobType: 'ประเภทงาน', description: 'รายละเอียดปัญหา',
     descriptionPh: 'อธิบายอาการ เช่น แอร์มีน้ำหยด ไฟไม่ติด…', priority: 'ความเร่งด่วน', contact: 'ข้อมูลผู้แจ้ง',
     name: 'ชื่อ-นามสกุล', phone: 'เบอร์โทรศัพท์', email: 'อีเมล (สำหรับรับการแจ้งเตือน)', department: 'หน่วยงาน',
@@ -84,6 +85,8 @@ export default {
   },
   jobs: {
     title: 'งานแจ้งซ่อม', mine: 'งานที่ฉันแจ้ง', assignedToMe: 'งานที่มอบหมายให้ฉัน', searchPh: 'ค้นหาเลขที่งาน รายละเอียด ผู้แจ้ง…',
+    searchHelp: 'กด Enter เพื่อค้นหาเลขที่งาน / เลขติดตามจากงานทั้งหมด · พิมพ์ข้อความเพื่อกรองงานในหน้านี้',
+    searchResult: 'พบ {n} งาน', page: 'หน้า {n} ({size} งานต่อหน้า)', files: 'ไฟล์แนบจากระบบเดิม',
     count: '{n} งาน', empty: 'ไม่มีงานในเงื่อนไขนี้', openOnly: 'เฉพาะงานที่ยังไม่ปิด', reporter: 'ผู้แจ้ง', assignee: 'ผู้ปฏิบัติงาน',
     unassigned: 'ยังไม่มอบหมาย', createdAt: 'วันที่แจ้ง', location: 'สถานที่', detail: 'รายละเอียดงาน', workDetail: 'รายละเอียดการปฏิบัติงาน',
     photos: 'รูปภาพ', addPhoto: 'เพิ่มรูป', timeline: 'บันทึกการดำเนินงาน', addComment: 'เพิ่มความเห็น', commentPh: 'พิมพ์ข้อความ…',
@@ -102,7 +105,7 @@ export default {
     byAssignee: 'ตามผู้ปฏิบัติงาน', onHold: 'งานหยุดชั่วคราว', overdue: 'เกินวันที่คาดว่าจะเสร็จ'
   },
   master: {
-    title: 'ข้อมูลหลัก', buildings: 'อาคาร', areas: 'พื้นที่', jobTypes: 'ประเภทงาน', code: 'รหัส',
+    title: 'ข้อมูลหลัก', sites: 'โครงการ', site: 'โครงการ', buildings: 'อาคาร', areas: 'พื้นที่', jobTypes: 'ประเภทงาน', code: 'รหัส',
     lat: 'ละติจูด', lng: 'ลองจิจูด', useMyLocation: 'ใช้ตำแหน่งปัจจุบัน', seed: 'สร้างข้อมูลตั้งต้น',
     seedConfirm: 'สร้างอาคาร VISTEC และประเภทงานมาตรฐาน?', seeded: 'สร้างข้อมูลตั้งต้นแล้ว', building: 'อาคาร',
     icon: 'ไอคอน (mdi)', chooseBuilding: 'เลือกอาคารเพื่อจัดการพื้นที่'

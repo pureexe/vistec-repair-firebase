@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import QRCode from 'qrcode'
-import { activeBuildings, areasOf } from '../../stores/master.js'
+import { activeSites, activeBuildings, areasOf, buildingsOf } from '../../stores/master.js'
 import { ln } from '../../i18n/index.js'
 
+const sSel = ref('')
 const bSel = ref('')
 const doPrint = () => window.print()
 const imgs = ref({})
-watch(activeBuildings, (b) => { if (!bSel.value && b.length) bSel.value = b[0].id }, { immediate: true })
+const buildings = computed(() => buildingsOf(sSel.value, activeBuildings.value))
+watch(buildings, (b) => { if (!b.some((x) => x.id === bSel.value)) bSel.value = b[0]?.id || '' }, { immediate: true })
 
 const building = computed(() => activeBuildings.value.find((b) => b.id === bSel.value))
 const items = computed(() => {
@@ -31,8 +33,11 @@ watch(items, async (list) => {
         <h1 class="title is-4">{{ $t('qr.title') }}</h1>
         <p class="has-text-grey mb-3">{{ $t('qr.hint') }}</p>
         <div class="field is-grouped">
+          <div class="control" v-if="activeSites.length > 1"><div class="select"><select v-model="sSel">
+            <option value="">{{ $t('request.site') }}: {{ $t('common.all') }}</option>
+            <option v-for="s in activeSites" :key="s.id" :value="s.id">{{ ln(s) }}</option></select></div></div>
           <div class="control"><div class="select"><select v-model="bSel">
-            <option v-for="b in activeBuildings" :key="b.id" :value="b.id">{{ ln(b) }}</option></select></div></div>
+            <option v-for="b in buildings" :key="b.id" :value="b.id">{{ ln(b) }}</option></select></div></div>
           <div class="control"><button class="button is-primary" @click="doPrint"><span class="icon"><i class="mdi mdi-printer"></i></span><span>{{ $t('common.print') }}</span></button></div>
         </div>
       </div>

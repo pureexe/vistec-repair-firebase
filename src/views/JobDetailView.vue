@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { ref as dbRef, update } from 'firebase/database'
 import { db } from '../firebase.js'
 import { authState, isTech } from '../stores/auth.js'
-import { master } from '../stores/master.js'
+import { master, placeName } from '../stores/master.js'
 import { ln, fmtDate, toDateInput, fromDateInput } from '../i18n/index.js'
 import {
   listenJob, listenEvents, changeStatus, putOnHold, assignJob, setExpected, addComment, addPhotos,
@@ -119,7 +119,7 @@ async function deletePhoto(pid, meta) {
               <table class="table is-fullwidth is-narrow is-size-7">
                 <tbody>
                   <tr><th style="width:35%">{{ $t('request.jobType') }}</th><td><i class="mdi" :class="master.jobTypes[job.jobTypeId]?.icon"></i> {{ ln(master.jobTypes[job.jobTypeId]) }}</td></tr>
-                  <tr><th>{{ $t('jobs.location') }}</th><td>{{ ln(master.buildings[job.buildingId]) }}<template v-if="master.areas[job.areaId]"> › {{ ln(master.areas[job.areaId]) }}</template><div v-if="job.locationDetail">{{ job.locationDetail }}</div></td></tr>
+                  <tr><th>{{ $t('jobs.location') }}</th><td>{{ placeName(job) }}<div v-if="job.locationDetail">{{ job.locationDetail }}</div></td></tr>
                   <tr v-if="job.gps"><th>{{ $t('jobs.gpsLink') }}</th><td><a :href="mapUrl(job.gps)" target="_blank" rel="noopener"><i class="mdi mdi-map-marker"></i> {{ job.gps.lat }}, {{ job.gps.lng }} (±{{ job.gps.accuracy }} m)</a></td></tr>
                   <tr><th>{{ $t('request.priority') }}</th><td>
                     <div v-if="isTech" class="select is-small"><select :value="job.priority" @change="setPriority($event.target.value)">
@@ -147,6 +147,13 @@ async function deletePhoto(pid, meta) {
             <div class="box">
               <h2 class="title is-6">{{ $t('jobs.photos') }}</h2>
               <PhotoGrid :job-id="job.id" :photos="job.photos" :deletable="isTech" @delete="deletePhoto" />
+              <template v-if="job.files">
+                <p class="has-text-weight-semibold is-size-7 mt-3 mb-1">{{ $t('jobs.files') }}</p>
+                <a v-for="(f, fid) in job.files" :key="fid" :href="f.url" target="_blank" rel="noopener" class="is-block is-size-7 mb-1">
+                  <i class="mdi" :class="/^(mp4|mov|avi|3gp|webm)$/.test(f.type) ? 'mdi-file-video' : 'mdi-paperclip'"></i>
+                  {{ f.name }} <span class="has-text-grey">({{ (f.bytes / 1048576).toFixed(1) }} MB)</span>
+                </a>
+              </template>
               <div class="mt-3" v-if="canEdit">
                 <PhotoPicker v-model="newPhotos" :max="MAX_PHOTOS" />
                 <button v-if="newPhotos.length" class="button is-primary is-small mt-2" :class="{ 'is-loading': busy === 'photos' }" @click="uploadPhotos">{{ $t('common.save') }}</button>

@@ -63,7 +63,8 @@ rules = {
       }
     },
 
-    "buildings": {".read": True, ".write": ADMIN, "$id": {".validate": "newData.hasChildren(['nameTh'])"}},
+    "sites": {".read": True, ".write": ADMIN, "$id": {".validate": "newData.hasChildren(['nameTh'])"}},
+    "buildings": {".read": True, ".write": ADMIN, ".indexOn": ["siteId"], "$id": {".validate": "newData.hasChildren(['nameTh'])"}},
     "areas": {".read": True, ".write": ADMIN, ".indexOn": ["buildingId"], "$id": {".validate": "newData.hasChildren(['nameTh', 'buildingId'])"}},
     "jobTypes": {".read": True, ".write": ADMIN, "$id": {".validate": "newData.hasChildren(['nameTh'])"}},
 
@@ -77,7 +78,9 @@ rules = {
       ".read": f"{TECH}"
                f" || ({AUTH} && query.orderByChild == 'reporterUid' && query.equalTo == auth.uid)"
                f" || ({CONTRACTOR} && query.orderByChild == 'assigneeUid' && query.equalTo == auth.uid)",
-      ".indexOn": ["createdAt", "status", "reporterUid", "assigneeUid"],
+      # idx/* = paging sort keys (src/services/jobIndex.js); jobNo / trackingCode = exact search
+      ".indexOn": ["createdAt", "status", "reporterUid", "assigneeUid", "siteId", "jobNo", "trackingCode",
+                   "idx/s", "idx/o", "idx/si", "idx/sis", "idx/sio", "idx/b", "idx/bs", "idx/bo"],
       "$jobId": {
         ".read": f"{TECH} || ({AUTH} && ({JOB_REPORTER} || {JOB_ASSIGNEE}))",
         ".write":
@@ -98,6 +101,7 @@ rules = {
         "status": {".validate": STATUS_RE},
         "priority": {".validate": "newData.isString() && newData.val().matches(/^(normal|urgent|low|callback)$/)"},
         "jobTypeId": {".validate": f"newData.isString() && root.child('jobTypes').child(newData.val()).exists()"},
+        "siteId": {".validate": f"newData.isString() && root.child('sites').child(newData.val()).exists()"},
         "buildingId": {".validate": f"newData.isString() && root.child('buildings').child(newData.val()).exists()"},
         "areaId": {".validate": "newData.isString()"},
         "locationDetail": {".validate": s(200)},
@@ -127,7 +131,7 @@ rules = {
             # reporter may add / remove photos on own job
             ".write": f"{AUTH} && data.parent().parent().child('reporterUid').val() == auth.uid",
             ".validate": "newData.hasChildren(['store', 'w', 'h', 'bytes']) && newData.child('w').val() <= 1280 && newData.child('h').val() <= 1280 && newData.child('bytes').val() <= 409600"
-                         " && (newData.parent().numChildren() <= 6)"
+            # (RTDB rules have no numChildren(); the per-job photo cap is enforced in PhotoPicker / MAX_PHOTOS)
           }
         },
         "createdAt": {".validate": NOW_OK},
@@ -136,6 +140,11 @@ rules = {
           ".validate": NOW_OK
         },
         "completedAt": {".validate": NOW_OK},
+        "idx": {"$k": {".validate": "$k.matches(/^(s|o|si|sis|sio|b|bs|bo)$/) && newData.isString() && newData.val().length <= 200"}},
+        # links to attachments that stay on the old server (videos, PDFs …) — importer only
+        "files": {".validate": False},
+        # reference to the old CPFM record — written only by scripts/import-cpfm.mjs (admin SDK bypasses rules)
+        "cpfm": {".validate": False},
         "$other": {".validate": False}
       }
     },
@@ -161,7 +170,9 @@ rules = {
                      " && newData.child('type').val().matches(/^(created|status|assign|expected|hold|comment|photo)$/)",
         "at": {".validate": NOW_OK},
         "note": {".validate": s(3000)},
-        "public": {".validate": "newData.isBoolean()"}
+        "public": {".validate": "newData.isBoolean()"},
+        # set only by the CPFM importer; Cloud Functions never e-mail imported events
+        "imported": {".validate": False}
       }
     }},
 

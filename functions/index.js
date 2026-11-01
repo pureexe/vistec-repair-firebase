@@ -113,7 +113,8 @@ export const onJobEvent = onValueCreated(
     const { jobId, eventId } = event.params
     const db = getDatabase()
     const job = (await db.ref(`jobs/${jobId}`).get()).val()
-    if (!job || !ev) return
+    // Jobs imported from the old CPFM system (scripts/import-cpfm.mjs) must never send mail
+    if (!job || !ev || ev.imported) return
     const L = T[job.lang] || T.th
     const fromReporter = ev.byUid === job.reporterUid
 

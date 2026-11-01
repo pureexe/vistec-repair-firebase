@@ -6,3 +6,5 @@ dist/
 functions/node_modules/
 .firebase/
 *.log
+.cpfm-cache/
+service-account*.json

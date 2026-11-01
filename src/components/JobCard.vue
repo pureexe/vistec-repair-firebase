@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import StatusTag from './StatusTag.vue'
-import { master } from '../stores/master.js'
+import { master, placeName } from '../stores/master.js'
 import { ln, fmtDate } from '../i18n/index.js'
 const props = defineProps({ job: Object, showReporter: Boolean })
 const overdue = computed(() => props.job.expectedDate && props.job.expectedDate < Date.now() && !['completed', 'cancelled'].includes(props.job.status))
@@ -23,7 +23,7 @@ const jt = computed(() => master.jobTypes[props.job.jobTypeId])
       </div>
       <p class="mb-2" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ job.description }}</p>
       <p class="is-size-7 has-text-grey">
-        <i class="mdi mdi-map-marker"></i> {{ ln(master.buildings[job.buildingId]) }}<template v-if="master.areas[job.areaId]"> › {{ ln(master.areas[job.areaId]) }}</template><template v-if="job.locationDetail"> · {{ job.locationDetail }}</template>
+        <i class="mdi mdi-map-marker"></i> {{ placeName(job) }}<template v-if="job.locationDetail"> · {{ job.locationDetail }}</template>
       </p>
       <p class="is-size-7 mt-1">
         <span v-if="showReporter" class="mr-3"><i class="mdi mdi-account"></i> {{ job.reporter?.name }}</span>

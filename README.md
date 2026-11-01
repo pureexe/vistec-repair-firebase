@@ -36,6 +36,22 @@ See `DB.md` (data design), `TODO.md` (progress) and `AGENTS.md` (hand-off guide)
 6. **Master data.** Open **ผู้ดูแล → ข้อมูลหลัก** and click *สร้างข้อมูลตั้งต้น* to create the VISTEC building and 12 standard job types.
    Then set each building's GPS position (use the *ใช้ตำแหน่งปัจจุบัน* button while standing there). The request form uses these positions to pick the nearest building.
 
+## 1b. Import from the old CPFM system
+
+The old system (`EXISTING_SYSTEM_URL`) stays the source of truth while both run. Re-run the import whenever you like.
+CPFM values overwrite ours, and data that only exists here (photos, new jobs) is kept. Details: [`CPFM_IMPORT.md`](CPFM_IMPORT.md).
+
+1. Publish the current [`database.rules.json`](database.rules.json) first. The importer refuses to write into a database anyone can read.
+2. Project settings → Service accounts → *Generate new private key*, save it as `service-account.json` in the project root (git-ignored),
+   and set `FIREBASE_SERVICE_ACCOUNT=./service-account.json` in `.env` next to `EXISTING_SYSTEM_URL/USERNAME/PASSWORD`.
+3. Deploy the functions **before** importing if they are already live (the update that skips imported events), or import before deploying them at all.
+4. Run:
+   ```bash
+   npm run import:cpfm -- --dry-run     # check first: writes .cpfm-cache/dry-run.json only
+   npm run import:cpfm                  # all 4 sites, ~25k jobs + photos; first run ≈8 h, later runs minutes
+   npm run import:cpfm -- --photos=link # if Storage is not enabled yet: keep attachments as links to the old server
+   ```
+
 ## 2. E-mail notifications (Cloud Functions, Blaze plan)
 
 ```bash

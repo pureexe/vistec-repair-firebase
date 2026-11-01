@@ -6,6 +6,7 @@ export default {
     profile: 'Profile', login: 'Sign in', logout: 'Sign out', more: 'More'
   },
   common: {
+    prev: 'Previous', next: 'Next', clear: 'Clear',
     save: 'Save', cancel: 'Cancel', close: 'Close', add: 'Add', edit: 'Edit', delete: 'Delete', search: 'Search',
     loading: 'Loading…', confirm: 'Confirm', back: 'Back', all: 'All', none: '-', yes: 'Yes', no: 'No',
     copy: 'Copy', copied: 'Copied', print: 'Print', optional: 'optional', required: 'required',
@@ -59,7 +60,7 @@ export default {
     partsEta: 'Parts expected on', resumeDate: 'Expected to resume on', note: 'Details (visible to reporter)'
   },
   request: {
-    title: 'Repair request form', building: 'Building', area: 'Area / floor / room', locationDetail: 'Location detail',
+    title: 'Repair request form', site: 'Site', building: 'Building', area: 'Area / floor / room', locationDetail: 'Location detail',
     locationDetailPh: 'e.g. Room 301 next to the lift', jobType: 'Job type', description: 'Problem description',
     descriptionPh: 'Describe the problem, e.g. air-con dripping, light not working…', priority: 'Priority', contact: 'Your contact',
     name: 'Full name', phone: 'Phone', email: 'E-mail (for notifications)', department: 'Department',
@@ -84,6 +85,8 @@ export default {
   },
   jobs: {
     title: 'Repair jobs', mine: 'My requests', assignedToMe: 'Assigned to me', searchPh: 'Search job no., description, reporter…',
+    searchHelp: 'Press Enter to find a job no. / tracking code among all jobs · type to filter the jobs on this page',
+    searchResult: '{n} job(s) found', page: 'Page {n} ({size} per page)', files: 'Files from the old system',
     count: '{n} jobs', empty: 'No jobs match', openOnly: 'Open jobs only', reporter: 'Reporter', assignee: 'Assignee',
     unassigned: 'Unassigned', createdAt: 'Reported', location: 'Location', detail: 'Job details', workDetail: 'Work performed',
     photos: 'Photos', addPhoto: 'Add photo', timeline: 'Activity log', addComment: 'Add comment', commentPh: 'Type a message…',
@@ -102,7 +105,7 @@ export default {
     byAssignee: 'By assignee', onHold: 'On hold', overdue: 'Past expected date'
   },
   master: {
-    title: 'Master data', buildings: 'Buildings', areas: 'Areas', jobTypes: 'Job types', code: 'Code',
+    title: 'Master data', sites: 'Sites', site: 'Site', buildings: 'Buildings', areas: 'Areas', jobTypes: 'Job types', code: 'Code',
     lat: 'Latitude', lng: 'Longitude', useMyLocation: 'Use my location', seed: 'Create defaults',
     seedConfirm: 'Create the VISTEC building and standard job types?', seeded: 'Defaults created', building: 'Building',
     icon: 'Icon (mdi)', chooseBuilding: 'Choose a building to manage its areas'

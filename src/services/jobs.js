@@ -1,12 +1,14 @@
 import {
-  ref as dbRef, push, update, runTransaction, onValue, query, orderByChild, equalTo, limitToLast, serverTimestamp, get
+  ref as dbRef, push, update, runTransaction, onValue, query, orderByChild, equalTo, limitToLast, serverTimestamp, get,
+  startAt, endAt, endBefore
 } from 'firebase/database'
 import { db } from '../firebase.js'
-import { randomCode, toArray } from './util.js'
+import { randomCode, toArray, normalizeCode } from './util.js'
 import { uploadJobPhoto } from './images.js'
+import { jobIndex, jobIndexQuery } from './jobIndex.js'
 
 // Fields of a job that are mirrored to the public /tracking/{code} node (no personal data!)
-const PUBLIC_FIELDS = ['status', 'jobTypeId', 'buildingId', 'areaId', 'expectedDate', 'expectedNote', 'hold', 'updatedAt']
+const PUBLIC_FIELDS = ['status', 'jobTypeId', 'siteId', 'buildingId', 'areaId', 'expectedDate', 'expectedNote', 'hold', 'updatedAt']
 
 async function nextJobNo() {
   const year = new Date().getFullYear()
@@ -16,7 +18,7 @@ async function nextJobNo() {
 }
 
 /**
- * Create a repair request. `form` = { buildingId, areaId, locationDetail, jobTypeId, description, priority,
+ * Create a repair request. `form` = { siteId, buildingId, areaId, locationDetail, jobTypeId, description, priority,
  * name, phone, email, department, gps, lang }, `images` = compressed images from compressImage().
  */
 export async function createJob(form, images, user) {
@@ -27,15 +29,16 @@ export async function createJob(form, images, user) {
   const now = serverTimestamp()
   const job = {
     jobNo, trackingCode: code, status: 'new', priority: form.priority || 'normal',
-    jobTypeId: form.jobTypeId, buildingId: form.buildingId, areaId: form.areaId || null,
+    jobTypeId: form.jobTypeId, siteId: form.siteId || null, buildingId: form.buildingId, areaId: form.areaId || null,
     locationDetail: form.locationDetail || '', gps: form.gps || null, description: form.description,
     reporterUid: user.uid,
     reporter: { name: form.name, email: form.email, phone: form.phone, department: form.department || '' },
     lang: form.lang || 'th', pdpaAt: now, createdAt: now, updatedAt: now
   }
+  job.idx = jobIndex(job, Date.now())
   const event = { at: now, byUid: user.uid, byName: form.name, type: 'created', to: 'new', note: '', public: true }
   const tracking = {
-    jobId, jobNo, status: 'new', jobTypeId: job.jobTypeId, buildingId: job.buildingId, areaId: job.areaId,
+    jobId, jobNo, status: 'new', jobTypeId: job.jobTypeId, siteId: job.siteId, buildingId: job.buildingId, areaId: job.areaId,
     createdAt: now, updatedAt: now, timeline: { [eventId]: { at: now, type: 'created', to: 'new', note: '' } }
   }
   await update(dbRef(db), {
@@ -62,6 +65,8 @@ export async function applyJobChange(job, patch, event, actor) {
   const id = job.id
   const updates = {}
   const full = { ...patch, updatedAt: now }
+  // keep the list sort keys in step with anything they are built from
+  if (['status', 'siteId', 'buildingId'].some((k) => k in patch)) full.idx = jobIndex({ ...job, ...patch })
   for (const [k, v] of Object.entries(full)) {
     updates[`jobs/${id}/${k}`] = v ?? null
     if (PUBLIC_FIELDS.includes(k)) updates[`tracking/${job.trackingCode}/${k}`] = publicValue(k, v)
@@ -125,6 +130,43 @@ export async function addPhotos(job, images, actor) {
 
 /* ---------- listeners ---------- */
 const listen = (q, cb, err) => onValue(q, (s) => cb(toArray(s.val()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))), err || ((e) => console.warn(e)))
+
+/* ---------- staff job list, one page at a time ---------- */
+export const JOBS_PAGE = 50
+
+/**
+ * Live listener for one page of jobs, newest first. filter = { site, building, status: 'all'|'open'|<status> };
+ * cursor = null for the first page, else the `next` from the previous page. cb({ jobs, next }) — next is null on the last page.
+ */
+export function listenJobsPage(filter, cursor, cb, err) {
+  const { field, prefix } = jobIndexQuery(filter)
+  const path = field === 'createdAt' ? 'createdAt' : `idx/${field}`
+  const cons = [orderByChild(path)]
+  if (prefix) cons.push(startAt(prefix))
+  if (cursor) cons.push(endBefore(cursor.v, cursor.k))
+  else if (prefix) cons.push(endAt(prefix + '\uf8ff'))
+  cons.push(limitToLast(JOBS_PAGE + 1))
+  return onValue(query(dbRef(db, 'jobs'), ...cons), (s) => {
+    const rows = []
+    s.forEach((c) => { rows.unshift({ id: c.key, ...c.val() }) }) // ascending → newest first
+    const jobs = rows.slice(0, JOBS_PAGE)
+    const last = jobs.at(-1)
+    const v = (j) => (field === 'createdAt' ? j.createdAt : j.idx?.[field])
+    cb({ jobs, next: rows.length > JOBS_PAGE && last ? { v: v(last), k: last.id } : null })
+  }, err || ((e) => console.warn(e)))
+}
+
+/** Exact lookup by job number (WO2026-0123) or tracking code, across all jobs. */
+export async function findJobs(text) {
+  const q = String(text || '').trim()
+  const tries = [['jobNo', q.toUpperCase()], ['trackingCode', normalizeCode(q)]]
+  for (const [k, v] of tries) {
+    if (!v) continue
+    const s = await get(query(dbRef(db, 'jobs'), orderByChild(k), equalTo(v)))
+    if (s.exists()) return toArray(s.val())
+  }
+  return []
+}
 
 export const listenAllJobs = (cb, limit = 1000, err) => listen(query(dbRef(db, 'jobs'), orderByChild('createdAt'), limitToLast(limit)), cb, err)
 export const listenMyJobs = (uid, cb, err) => listen(query(dbRef(db, 'jobs'), orderByChild('reporterUid'), equalTo(uid)), cb, err)
