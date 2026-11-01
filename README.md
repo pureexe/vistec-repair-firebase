@@ -26,6 +26,11 @@ See `DB.md` (data design), `TODO.md` (progress) and `AGENTS.md` (hand-off guide)
    - **Email/Password** and turn on **Email link (passwordless sign-in)**. Contractors use this.
    - In Settings → *Authorized domains*, add your hosting domain (and `localhost` for development).
    - In Settings → *User account linking*, keep **"Create one account per email address"** (the default). People can link more sign-in methods to one account from **โปรไฟล์**.
+   - **Hide methods you have not enabled.** Each button has an `.env` switch: `VITE_AUTH_MICROSOFT`,
+     `VITE_AUTH_GOOGLE`, `VITE_AUTH_PASSWORD`, `VITE_AUTH_EMAIL_LINK`. Unset/empty means *on*; set it to
+     `false` to hide the button. Showing a button for a disabled provider makes it fail with
+     `auth/configuration-not-found` (or `auth/operation-not-allowed`), which confuses users.
+     Restart `npm run dev` (or rebuild) after changing these — Vite reads `.env` at build time.
 5. **First admin.** Sign in to the site once, then in the RTDB console set `/users/<your uid>/role` to `"admin"`.
    After that, manage everyone else from **ผู้ดูแล → ผู้ใช้งาน**.
 6. **Master data.** Open **ผู้ดูแล → ข้อมูลหลัก** and click *สร้างข้อมูลตั้งต้น* to create the VISTEC building and 12 standard job types.

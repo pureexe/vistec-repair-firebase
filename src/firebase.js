@@ -22,3 +22,24 @@ export const db = getDatabase(app)
 export const storage = getStorage(app)
 export const IMAGE_STORE = env.VITE_IMAGE_STORE === 'rtdb' ? 'rtdb' : 'storage'
 export const MS_TENANT = env.VITE_MS_TENANT || ''
+
+/** Read a boolean switch from .env. Unset/blank = default, so existing setups keep working. */
+const flag = (raw, def = true) => {
+  if (raw == null || String(raw).trim() === '') return def
+  return !/^(false|0|no|off|disabled|hide)$/i.test(String(raw).trim())
+}
+
+/**
+ * Which sign-in methods the login screen offers. Turn one off when the matching provider is
+ * not enabled in Firebase Console → Authentication → Sign-in method; otherwise the button is
+ * shown and fails with auth/operation-not-allowed (or auth/configuration-not-found).
+ * NB: read each var as a static `env.VITE_…` property rather than `env[name]`, so Vite can see
+ * which vars are used and inline them into the build.
+ */
+export const AUTH_METHODS = {
+  microsoft: flag(env.VITE_AUTH_MICROSOFT),
+  google: flag(env.VITE_AUTH_GOOGLE),
+  password: flag(env.VITE_AUTH_PASSWORD),
+  emailLink: flag(env.VITE_AUTH_EMAIL_LINK)
+}
+export const hasAnyAuthMethod = Object.values(AUTH_METHODS).some(Boolean)

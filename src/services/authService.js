@@ -64,13 +64,20 @@ export function authErrorMessage(e, t) {
     return t('auth.accountExists', { methods: e.customData?.email || '' })
   }
   const map = {
-    'auth/invalid-credential': 'Invalid e-mail or password',
-    'auth/wrong-password': 'Invalid e-mail or password',
-    'auth/user-not-found': 'Invalid e-mail or password',
-    'auth/email-already-in-use': 'E-mail already registered — please sign in',
-    'auth/weak-password': 'Password must be at least 6 characters',
+    'auth/invalid-credential': 'auth.badCredential',
+    'auth/wrong-password': 'auth.badCredential',
+    'auth/user-not-found': 'auth.badCredential',
+    'auth/email-already-in-use': 'auth.emailInUse',
+    'auth/weak-password': 'auth.weakPassword',
+    // Project-side setup problems. These mean the Firebase console is not configured for
+    // this project — not that the user typed something wrong — so say what to fix.
+    'auth/configuration-not-found': 'auth.notConfigured',
+    'auth/operation-not-allowed': 'auth.providerDisabled',
+    'auth/invalid-api-key': 'auth.apiKeyInvalid',
+    'auth/api-key-not-valid-please-pass-a-valid-api-key': 'auth.apiKeyInvalid',
+    'auth/unauthorized-domain': 'auth.unauthorizedDomain',
     'auth/popup-closed-by-user': null
   }
-  if (e?.code in map) return map[e.code]
+  if (e?.code in map) { const key = map[e.code]; return key ? t(key) : null }
   return e?.message || String(e)
 }

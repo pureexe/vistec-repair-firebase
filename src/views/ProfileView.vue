@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ref as dbRef, update } from 'firebase/database'
 import { updateProfile } from 'firebase/auth'
-import { auth, db } from '../firebase.js'
+import { auth, db, AUTH_METHODS } from '../firebase.js'
 import { authState, role } from '../stores/auth.js'
 import { setLocale } from '../i18n/index.js'
 import { linkProvider, linkPassword, unlinkProvider, authErrorMessage } from '../services/authService.js'
@@ -22,10 +22,13 @@ watch(() => authState.profile, (p) => {
 
 const providers = computed(() => { tick.value; return (auth.currentUser?.providerData || []).map((p) => p.providerId) })
 const all = [
-  { id: 'microsoft.com', icon: 'mdi-microsoft', label: 'Microsoft' },
-  { id: 'google.com', icon: 'mdi-google', label: 'Google' },
-  { id: 'password', icon: 'mdi-email-lock', label: 'E-mail / password' }
+  { id: 'microsoft.com', icon: 'mdi-microsoft', label: 'Microsoft', on: AUTH_METHODS.microsoft },
+  { id: 'google.com', icon: 'mdi-google', label: 'Google', on: AUTH_METHODS.google },
+  { id: 'password', icon: 'mdi-email-lock', label: 'E-mail / password', on: AUTH_METHODS.password }
 ]
+// Offer a method only when it is enabled, but always show one the account already linked
+// so that it can still be unlinked after an admin turns the provider off.
+const linkable = computed(() => all.filter((p) => p.on || providers.value.includes(p.id)))
 
 async function save() {
   busy.value = 'save'
@@ -79,7 +82,7 @@ async function unlink(id) {
       <div class="box">
         <h2 class="title is-6 mb-1">{{ $t('profile.linked') }}</h2>
         <p class="is-size-7 has-text-grey mb-3">{{ $t('profile.linkHint') }}</p>
-        <div v-for="p in all" :key="p.id" class="is-flex is-align-items-center is-justify-content-space-between py-2" style="border-bottom:1px solid #f0f0f0;gap:.5rem">
+        <div v-for="p in linkable" :key="p.id" class="is-flex is-align-items-center is-justify-content-space-between py-2" style="border-bottom:1px solid #f0f0f0;gap:.5rem">
           <span><span class="icon"><i class="mdi" :class="p.icon"></i></span> {{ p.label }}</span>
           <template v-if="providers.includes(p.id)">
             <span>

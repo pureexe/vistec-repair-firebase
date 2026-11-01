@@ -35,6 +35,32 @@ Last updated: 2026-10-21 (Claude, first build)
 - [ ] Run `tests/` against the emulator (couldn't download the emulator in the build sandbox) — run it on a dev machine
 - [ ] End-to-end test with the real Firebase project once `.env` is filled
 
+## Blockers found while testing sign-up (2026-11-01)
+
+Verified against the live project `vistec-repair` with the API key from `.env`:
+
+- [!] **Account creation fails with `auth/configuration-not-found`.** The API key itself is valid
+  (`securetoken` accepts it), but `identitytoolkit.googleapis.com` returns `CONFIGURATION_NOT_FOUND`
+  for every call — sign-up, sign-in, password reset, reCAPTCHA params. That means Firebase
+  **Authentication is not set up yet** for this project, or the `.env` web config comes from a
+  different project. Fix in the console (README §1.4): Authentication → *Get started* → enable
+  Email/Password (+ Email link) and Microsoft, then re-copy Project settings → General → Your apps.
+  `vistec-repair.firebasestorage.app` also returns 404 and `vistec-repair.web.app` shows
+  "Site Not Found", so Storage and Hosting have not been initialised either.
+- [!] **The live Realtime Database is world-readable.** `GET /.json`, `/users.json`, `/jobs.json`
+  all return `null` (HTTP 200) instead of *permission denied*, so the deployed rules are still
+  Firebase's open test-mode rules — `database.rules.json` was never published. Publish it before
+  any real data goes in.
+- [x] `authErrorMessage()` now maps the project-side codes (`configuration-not-found`,
+  `operation-not-allowed`, `invalid-api-key`, `unauthorized-domain`) to an actionable message in
+  Thai and English, and the remaining auth errors go through `$t()` instead of hard-coded English.
+- [x] **Per-method sign-in switches in `.env`**: `VITE_AUTH_MICROSOFT`, `VITE_AUTH_GOOGLE`,
+  `VITE_AUTH_PASSWORD`, `VITE_AUTH_EMAIL_LINK` (unset = on). `src/firebase.js → AUTH_METHODS` is
+  consumed by `LoginView` (buttons, separator, password form, passwordless link) and by `ProfileView`
+  (only methods that are enabled *or* already linked are offered, so a linked method can still be
+  unlinked after a provider is turned off). All four off shows a warning instead of an empty card.
+  `.env` currently ships Google and the e-mail link as `false` until those providers are enabled.
+
 ## Phase 4 — later
 - [ ] Satisfaction survey after completion (6 criteria, see CPFM §4.2) — e-mail link + `/survey/:code`
 - [ ] SLA per job type + due date / overdue counter
