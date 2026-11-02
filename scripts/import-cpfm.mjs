@@ -18,9 +18,15 @@
  *   --photos=MODE     where attached photos go: storage | rtdb | link (default: VITE_IMAGE_STORE).
  *                     storage/rtdb = shrink to ≤1280×720 WebP like the app does; link = keep a link to the old server.
  *                     Videos and other files are always kept as links (jobs/{id}/files).
+ *   --photos-since=YYYY-MM-DD  only photos attached on/after this date are stored; older ones stay links
+ *                     to the old server until a later run without the flag (or with an earlier date) stores
+ *                     them and removes the link. Keeps one run under the 5,000 free Storage uploads a month.
  *   --refresh-notes   re-download every job's activity log and attachment list, ignoring the cache
  *   --concurrency=N   parallel note requests (default 4 — be gentle with the old server)
  *   --force           rewrite every job even if nothing changed
+ *   --yes             really upload. Without it the run stops after printing the size / cost estimate
+ *                     (the project is on the pay-as-you-go Blaze plan — someone must look at the numbers first)
+ *   --accept-cost     with --yes, upload even when the estimate is over the free tier (otherwise it stops there)
  *
  * Needs in .env: EXISTING_SYSTEM_URL, EXISTING_SYSTEM_USERNAME, EXISTING_SYSTEM_PASSWORD,
  * VITE_FIREBASE_DATABASE_URL and (unless --dry-run) FIREBASE_SERVICE_ACCOUNT=path/to/service-account.json
@@ -30,7 +36,7 @@
  * How the old site works and how this maps onto our tree: CPFM_IMPORT.md
  */
 import { createHash, randomInt } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { jobIndex } from '../src/services/jobIndex.js'
@@ -49,6 +55,8 @@ const NOTES = !argv['no-notes']
 const FILES = !argv['no-files']
 const PHOTOS = String(argv.photos || process.env.VITE_IMAGE_STORE || 'storage')
 if (!['storage', 'rtdb', 'link'].includes(PHOTOS)) die('--photos must be storage, rtdb or link')
+const PHOTOS_SINCE = argv['photos-since'] ? String(argv['photos-since']) : ''
+if (PHOTOS_SINCE && !/^\d{4}-\d{2}-\d{2}$/.test(PHOTOS_SINCE)) die('--photos-since must be YYYY-MM-DD')
 const FORCE = !!argv.force
 const CONC = Number(argv.concurrency || 4)
 const LIMIT = argv.limit ? Number(argv.limit) : Infinity
@@ -211,6 +219,34 @@ async function webpOf(f) {
   return { buf: data, ...meta }
 }
 const readAll = async (db, path) => (db ? (await db.ref(path).get()).val() || {} : {})
+
+/**
+ * Size of what a run sends, against the Blaze no-cost quotas (US bucket): RTDB 1 GB stored / 10 GB downloaded a month;
+ * Storage 5 GB stored, 5,000 uploads (Class A) and 50,000 downloads (Class B) a month. Photos not yet converted are
+ * counted at the average size of the ones already in the cache (≈30 KB).
+ */
+function estimate(up, photoJobs) {
+  const MB = 1024 * 1024
+  const dbBytes = Buffer.byteLength(JSON.stringify(up))
+  const cached = existsSync(join(CACHE, 'photos')) ? readdirSync(join(CACHE, 'photos')).filter((f) => f.endsWith('.json')) : []
+  const sizes = cached.map((f) => JSON.parse(readFileSync(join(CACHE, 'photos', f), 'utf8')).bytes)
+  const avg = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : 30 * 1024
+  const photoBytes = photoJobs.length * avg
+  const rtdbPhotos = PHOTOS === 'rtdb' ? photoBytes * 1.34 : 0
+  const uploads = PHOTOS === 'storage' ? photoJobs.length : 0
+  const numbers = { dbMB: (dbBytes + rtdbPhotos) / MB, photos: photoJobs.length, photoMB: photoBytes / MB, storageUploads: uploads, photoMode: PHOTOS }
+  const over = []
+  if (numbers.dbMB > 1024) over.push('RTDB storage > 1 GB')
+  if (uploads > 5000) over.push(`Storage uploads ${uploads} > 5,000 free per month (≈ $${((uploads - 5000) / 1000 * 0.005).toFixed(2)} at $0.005 / 1,000)`)
+  if (PHOTOS === 'storage' && numbers.photoMB > 5 * 1024) over.push('Storage > 5 GB')
+  const text = [
+    `  Realtime Database write: ${numbers.dbMB.toFixed(1)} MB (${Object.keys(up).length} paths) — free tier 1 GB stored`,
+    `  photos: ${photoJobs.length} → ${PHOTOS}, ≈ ${numbers.photoMB.toFixed(0)} MB (avg ${(avg / 1024).toFixed(0)} KB)` +
+      (uploads ? ` = ${uploads} Storage uploads — free tier 5,000 / month, 5 GB stored` : ''),
+    over.length ? `  ⚠ over the free tier: ${over.join('; ')}` : '  ✓ within the free tier'
+  ].join('\n')
+  return { text, numbers: { ...numbers, overFreeTier: over } }
+}
 
 /* ================================================================= */
 async function main() {
@@ -429,8 +465,9 @@ async function main() {
         if (f.f_status === '0' || !f.f_url) continue
         const pid = `cpfm_f${f.f_id}`
         const at = tsBkk(f.users_date) || createdAt
-        if (PHOTOS !== 'link' && IMG.test(f.f_type || '')) {
-          if (!prev?.photos?.[pid]) photoJobs.push({ jobId: id, pid, f, at })
+        if (PHOTOS !== 'link' && IMG.test(f.f_type || '') && (f.users_date || '') >= PHOTOS_SINCE) {
+          if (!prev?.photos?.[pid]) photoJobs.push({ jobId: id, pid, f, at, linked: !!prev?.files?.[pid] })
+          else if (prev?.files?.[pid]) up[`jobs/${id}/files/${pid}`] = null
           continue
         }
         const link = { name: clean(f.f_name).slice(0, 200) || pid, url: fileUrl(f), type: String(f.f_type || '').toLowerCase(), bytes: Number(f.f_size) || 0, by: clean(f.users_date_by), at }
@@ -456,12 +493,32 @@ async function main() {
     }
   }
 
+  /* ---------- sort keys for jobs created in the new app (paged job list) ---------- */
+  for (const [id, j] of Object.entries(cur.jobs)) {
+    if (!j || j.cpfm || typeof j.createdAt !== 'number') continue
+    const idx = jobIndex(j)
+    if (JSON.stringify(idx) !== JSON.stringify(j.idx)) { up[`jobs/${id}/idx`] = idx; stats.reindexed++ }
+  }
+
+  /* ---------- what this run would cost (Blaze plan) — stop here unless --yes ---------- */
+  const est = estimate(up, photoJobs)
+  log('\nUpload estimate:\n' + est.text)
+  writeFileSync(join(CACHE, 'estimate.json'), JSON.stringify({ at: new Date().toISOString(), stats, ...est.numbers }, null, 2))
+  if (!DRY && !argv.yes) {
+    log('\n⏸ nothing uploaded. Check the estimate above, then re-run with --yes (the cache makes it quick).')
+    process.exit(0)
+  }
+  if (!DRY && est.numbers.overFreeTier.length && !argv['accept-cost']) {
+    log('\n⏸ nothing uploaded: over the free tier. Ask the project owner, then add --accept-cost (or use --photos-since to split it).')
+    process.exit(0)
+  }
+
   /* ---------- photos: download once (cached), shrink, store ---------- */
   if (photoJobs.length && DRY) log(`dry run: ${photoJobs.length} photos would be downloaded and stored (${PHOTOS})`)
   if (photoJobs.length && !DRY) {
     log(`→ ${photoJobs.length} photos → ${PHOTOS}`)
     let done = 0
-    await pool(photoJobs, CONC, async ({ jobId, pid, f, at }) => {
+    await pool(photoJobs, CONC, async ({ jobId, pid, f, at, linked }) => {
       try {
         const img = await webpOf(f)
         const meta = { w: img.w, h: img.h, bytes: img.bytes, by: 'cpfm', at, name: clean(f.f_name).slice(0, 200) }
@@ -471,10 +528,11 @@ async function main() {
         } else {
           const path = `jobs/${jobId}/${pid}.webp`
           const token = createHash('sha1').update(path + Date.now()).digest('hex')
-          await bucket.file(path).save(img.buf, { contentType: 'image/webp', metadata: { cacheControl: 'public,max-age=31536000', metadata: { uid: 'cpfm', firebaseStorageDownloadTokens: token } } })
+          await bucket.file(path).save(img.buf, { resumable: false, contentType: 'image/webp', metadata: { cacheControl: 'public,max-age=31536000', metadata: { uid: 'cpfm', firebaseStorageDownloadTokens: token } } })
           const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`
           up[`jobs/${jobId}/photos/${pid}`] = { ...meta, store: 'storage', path, url }
         }
+        if (linked) up[`jobs/${jobId}/files/${pid}`] = null // stored now (e.g. a later --photos-since run) — drop the old link
         stats.photos++
       } catch (e) {
         // HEIC the converter can't read, a broken file, a 404 … keep a link instead
@@ -485,13 +543,6 @@ async function main() {
     })
   }
 
-  /* ---------- sort keys for jobs created in the new app (paged job list) ---------- */
-  for (const [id, j] of Object.entries(cur.jobs)) {
-    if (!j || j.cpfm || typeof j.createdAt !== 'number') continue
-    const idx = jobIndex(j)
-    if (JSON.stringify(idx) !== JSON.stringify(j.idx)) { up[`jobs/${id}/idx`] = idx; stats.reindexed++ }
-  }
-
   /* ---------- write ---------- */
   log('\nSummary (new records):', JSON.stringify(stats))
   if (conflicts.length) log(`⚠ ${conflicts.length} job numbers exist both in CPFM and as jobs created in the new app (kept both): ${conflicts.slice(0, 10).join(', ')}…`)
@@ -500,7 +551,7 @@ async function main() {
     const out = join(CACHE, 'dry-run.json')
     writeFileSync(out, JSON.stringify(up))
     log(`dry run: ${paths.length} paths written to ${out} — nothing sent to Firebase`)
-    return
+    process.exit(0) // an open Firebase connection would keep node alive
   }
   const CHUNK = 5000
   for (let i = 0; i < paths.length; i += CHUNK) {

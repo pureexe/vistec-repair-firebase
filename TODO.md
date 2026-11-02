@@ -75,6 +75,9 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
 - [ ] Dashboard still loads the newest 5000 jobs, so its totals are not all-time. Needs aggregates (`/stats`, kept by the
       importer + a Cloud Function on job writes).
 - [ ] Before CPFM is switched off: copy the `jobs/*/files` links (videos, PDFs) into Storage.
+- [~] Photo upload split to stay in the free 5,000 Storage uploads/month (`--photos-since`):
+      Nov 2026: `--photos-since=2023-11-01` (≈4,077 photos). Older photos (≈3,831, 2021–Oct 2023) stay links to CPFM.
+      **Dec 2026 or later: run `npm run import:cpfm` again without `--photos-since`** to store them (the links are removed).
 
 ## Phase 4 — later
 - [ ] Satisfaction survey after completion (6 criteria, see CPFM §4.2) — e-mail link + `/survey/:code`

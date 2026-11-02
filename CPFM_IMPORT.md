@@ -102,6 +102,9 @@ Activity-log `note_status` values: `แจ้งงานใหม่` (created)
   link in `jobs/{id}/files/cpfm_f{f_id}` = `{ name, url, type, bytes, by, at }` and listed on the job page. **These
   links point to the old server and break when CPFM is switched off.** Copy them to Storage before that.
 - A photo that is already in `jobs/{id}/photos` is never downloaded again. Files deleted in CPFM are not removed here.
+- `--photos-since=YYYY-MM-DD` stores only photos attached on/after that date; older photos become links in
+  `jobs/{id}/files` like videos. A later run without the flag stores them and deletes those links. Use it to keep a
+  run under Storage's free 5,000 uploads a month (Blaze). Photos per year are about 1,100 to 1,550 (7,908 total by Nov 2026).
 - With `--photos=rtdb`, ~11k photos × ~40 KB base64 ≈ 450 MB of RTDB. That's workable but heavy on the Spark plan (1 GB), so prefer Storage.
 
 ## Not imported yet (ideas)
