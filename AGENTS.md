@@ -50,6 +50,24 @@ firebase.json           hosting / rules / functions config
 - When you change the rules, add a case to `tests/rules.test.mjs` and run it.
 - Bulma is themed in `src/styles/main.scss`. Light theme only (the client asked for a white theme), so do not re-enable Bulma's dark theme.
 
+## Monthly CPFM sync (until the client switches off CPFM)
+CPFM is still the live system, so new jobs, status changes and photos keep arriving there. Re-run the importer
+about once a month. It only uploads what changed: jobs whose content differs, and photos not yet in `jobs/*/photos`.
+Project is on **Blaze (pay-as-you-go)**: the free tier allows 5,000 Storage uploads a month. **Ask the user before
+any run that goes over it.** The importer stops by itself if the estimate is over (needs `--accept-cost` to continue).
+```
+npm run import:cpfm                 # scrape + print the estimate, uploads nothing
+npm run import:cpfm -- --yes        # upload; check the estimate first. Detach it for long runs:
+setsid nohup node --max-old-space-size=8192 scripts/import-cpfm.mjs --yes > .cpfm-cache/import.log 2>&1 < /dev/null & disown
+```
+- **Do not pass `--photos-since`** on the monthly run. The first import (1 Nov 2026) used `--photos-since=2023-11-01`,
+  so photos older than 2023-11-01 are still links to CPFM. A run without the flag uploads them **and** every photo
+  added after the last run, and removes the old links. See TODO.md Phase 3b for status.
+- If the estimate shows more than 5,000 uploads, split it: `--photos-since=<date>` uploads only newer photos and
+  leaves older ones as links for next month. Tell the user the numbers.
+- After the run, check `/config/cpfmImport` (stats) and the end of `.cpfm-cache/import.log`, then tick TODO.md.
+- `.cpfm-cache/` (notes, attachment lists, converted photos) makes re-runs quick. Don't delete it; it's git-ignored.
+
 ## Commands
 ```
 npm install

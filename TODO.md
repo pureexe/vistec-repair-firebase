@@ -76,8 +76,11 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
       importer + a Cloud Function on job writes).
 - [ ] Before CPFM is switched off: copy the `jobs/*/files` links (videos, PDFs) into Storage.
 - [~] Photo upload split to stay in the free 5,000 Storage uploads/month (`--photos-since`):
-      Nov 2026: `--photos-since=2023-11-01` (≈4,077 photos). Older photos (≈3,831, 2021–Oct 2023) stay links to CPFM.
-      **Dec 2026 or later: run `npm run import:cpfm` again without `--photos-since`** to store them (the links are removed).
+      - [x] 1 Nov 2026: `--photos-since=2023-11-01 --yes` (≈4,077 photos, Nov 2023 → 1 Nov 2026).
+      - [ ] **Dec 2026 or later: sync again without `--photos-since`** (see AGENTS.md → "Monthly CPFM sync").
+            One run stores both gaps: the ≈3,831 photos older than 2023-11-01 (now links to CPFM, removed once stored)
+            and every photo/job added in CPFM after 1 Nov 2026. Expect ≈3,831 + ~110 per month since then (< 5,000).
+- [ ] Until the switch-over from CPFM, run the monthly sync (AGENTS.md → "Monthly CPFM sync"). CPFM is still in use.
 
 ## Phase 4 — later
 - [ ] Satisfaction survey after completion (6 criteria, see CPFM §4.2) — e-mail link + `/survey/:code`
