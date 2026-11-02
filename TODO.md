@@ -67,7 +67,8 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
 - [x] `npm run import:cpfm` (`scripts/import-cpfm.mjs`, guide `CPFM_IMPORT.md`): all 4 sites (THEENCONY, PTTEP, VISTEC, KVIS),
       ~25.5k jobs + activity log, idempotent (`cpfm_` ids + payload hash), old system wins. Tested end-to-end on the emulator.
 - [x] `onJobEvent` skips `imported` events (no mail storm)
-- [!] Client: generate a service-account key, re-publish `database.rules.json`, then run the import against the live DB
+- [x] Client: generate a service-account key, re-publish `database.rules.json`, then run the import against the live DB
+      (done 1 Nov 2026: 25,509 jobs, 80,120 events, 4,076 photos in Storage, 5,013 links; stats in `/config/cpfmImport`)
 - [x] Staff job list is paged in the database (50/page, prev/next) with `jobs/*/idx` sort keys. Filters: status / open,
       site, building. Enter in search = exact job no. / tracking code over all jobs. Contractors and "assigned to me" still load their own list.
 - [x] Attachments: photos → ≤1280×720 WebP in Storage (or RTDB), HEIC via heic-convert. Videos/other → links (`jobs/*/files`)
@@ -76,7 +77,7 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
       importer + a Cloud Function on job writes).
 - [ ] Before CPFM is switched off: copy the `jobs/*/files` links (videos, PDFs) into Storage.
 - [~] Photo upload split to stay in the free 5,000 Storage uploads/month (`--photos-since`):
-      - [x] 1 Nov 2026: `--photos-since=2023-11-01 --yes` (≈4,077 photos, Nov 2023 → 1 Nov 2026).
+      - [x] 1 Nov 2026: `--photos-since=2023-11-01 --yes`: 4,076 photos stored, 2 failed to convert (kept as links).
       - [ ] **Dec 2026 or later: sync again without `--photos-since`** (see AGENTS.md → "Monthly CPFM sync").
             One run stores both gaps: the ≈3,831 photos older than 2023-11-01 (now links to CPFM, removed once stored)
             and every photo/job added in CPFM after 1 Nov 2026. Expect ≈3,831 + ~110 per month since then (< 5,000).
