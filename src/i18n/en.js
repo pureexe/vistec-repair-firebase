@@ -3,7 +3,8 @@ export default {
   nav: {
     home: 'Home', request: 'Report', track: 'Track', myJobs: 'My jobs', jobs: 'All jobs',
     dashboard: 'Dashboard', admin: 'Admin', master: 'Master data', users: 'Users', qr: 'QR codes',
-    profile: 'Profile', login: 'Sign in', logout: 'Sign out', more: 'More'
+    profile: 'Profile', login: 'Sign in', logout: 'Sign out', more: 'More',
+    pm: 'Maintenance', pmList: 'PM plans', pmCalendar: 'PM calendar', assets: 'Assets', assetList: 'Machines & equipment', materials: 'Materials & spare parts'
   },
   common: {
     prev: 'Previous', next: 'Next', clear: 'Clear',
@@ -17,7 +18,7 @@ export default {
   home: {
     heroTitle: 'Report a problem. Follow every step.',
     heroText: 'Report building, electrical, air-con, plumbing, IT and other issues on campus. Get a tracking number and an e-mail whenever the status changes.',
-    startRequest: 'Report now', trackTitle: 'Track a job', trackPlaceholder: 'Enter your 8-character tracking code',
+    startRequest: 'Report now', trackTitle: 'Track a job', trackPlaceholder: 'Enter your job no., e.g. VR2026-0001',
     feat1: 'Uses your phone GPS to fill in the location', feat2: 'E-mail on every status change',
     feat3: 'See the expected finish date — and why, if it is delayed'
   },
@@ -69,32 +70,33 @@ export default {
     submit: 'Submit request', submitting: 'Submitting…', selectPh: '— select —',
     gps: 'Current location', gpsUse: 'Use GPS location', gpsLoading: 'Reading location…', gpsOk: 'Location found (±{m} m)',
     gpsNearest: 'Nearest building: {name} (~{m} m) — selected for you', gpsDenied: 'Could not read your location — please choose the building',
-    gpsMap: 'View on map', successTitle: 'Request submitted', successText: 'Keep this tracking code. We will e-mail you whenever the status changes.',
-    jobNo: 'Job no.', trackingCode: 'Tracking code', openTracking: 'Open tracking page', another: 'Report another',
-    fromQr: 'From QR code: {name}'
+    gpsMap: 'View on map', successTitle: 'Request submitted', successText: 'Keep this job number to track your request. We will e-mail you whenever the status changes.',
+    jobNo: 'Job no.', openTracking: 'Open tracking page', another: 'Report another',
+    fromQr: 'From QR code: {name}',
+    forAsset: 'Work order for: {name}'
   },
   track: {
-    title: 'Track repair', notFound: 'Tracking code not found. Please check and try again.', lookup: 'Check',
+    title: 'Track repair', notFound: 'Job number not found. Please check and try again.', lookup: 'Check',
     expected: 'Expected completion', expectedUnknown: 'Not set yet — staff will update after assessing the job',
     onHoldTitle: 'This job is on hold', timeline: 'Progress', reported: 'Reported', updated: 'Last update', live: 'Live',
     share: 'Share tracking link'
   },
   event: {
-    created: 'Request received', status: 'Status changed to "{to}"', assign: 'Assigned to {to}', expected: 'Expected completion date set',
+    created: 'Request received', status: 'Status changed to "{to}"', assign: 'Assigned to {to}', unassign: '{from} removed from the job', expected: 'Expected completion date set',
     hold: 'On hold: {to}', comment: 'Comment', photo: 'Photo added'
   },
   jobs: {
     title: 'Repair jobs', mine: 'My requests', assignedToMe: 'Assigned to me', searchPh: 'Search job no., description, reporter…',
-    searchHelp: 'Press Enter to find a job no. / tracking code among all jobs · type to filter the jobs on this page',
+    searchHelp: 'Press Enter to find a job no. among all jobs · type to filter the jobs on this page',
     searchResult: '{n} job(s) found', page: 'Page {n} ({size} per page)', files: 'Files from the old system',
     count: '{n} jobs', empty: 'No jobs match', openOnly: 'Open jobs only', reporter: 'Reporter', assignee: 'Assignee',
-    unassigned: 'Unassigned', createdAt: 'Reported', location: 'Location', detail: 'Job details', workDetail: 'Work performed',
+    unassigned: 'Unassigned', publicPage: 'Public tracking page', createdAt: 'Reported', location: 'Location', detail: 'Job details', workDetail: 'Work performed',
     photos: 'Photos', addPhoto: 'Add photo', timeline: 'Activity log', addComment: 'Add comment', commentPh: 'Type a message…',
     publicComment: 'Visible to reporter (and e-mailed)', internal: 'Internal', overdue: 'Overdue', gpsLink: 'GPS location',
     newRequest: 'New request'
   },
   actions: {
-    title: 'Actions', assign: 'Assign', assignTo: 'Assign to', start: 'Start work', hold: 'Put on hold',
+    title: 'Actions', assign: 'Assign', assignTo: 'Assign to', add: 'Add', addAssignee: 'Add staff to this job', removeAssignee: 'Remove {name} from this job?', start: 'Start work', hold: 'Put on hold',
     resume: 'Resume', complete: 'Close job (completed)', cancelJob: 'Cancel job', reopen: 'Reopen',
     setExpected: 'Set expected completion date', expectedNote: 'Note to reporter', priority: 'Priority',
     reason: 'Reason', confirmCancel: 'Cancel this job?', workDone: 'Work performed', notifyNote: 'The reporter is e-mailed automatically'
@@ -108,16 +110,49 @@ export default {
     title: 'Master data', sites: 'Sites', site: 'Site', buildings: 'Buildings', areas: 'Areas', jobTypes: 'Job types', code: 'Code',
     lat: 'Latitude', lng: 'Longitude', useMyLocation: 'Use my location', seed: 'Create defaults',
     seedConfirm: 'Create the VISTEC building and standard job types?', seeded: 'Defaults created', building: 'Building',
-    icon: 'Icon (mdi)', chooseBuilding: 'Choose a building to manage its areas'
+    icon: 'Icon (mdi)', chooseBuilding: 'Choose a building to manage its areas',
+    assetTypes: 'Asset / material types', isGroup: 'this is a system group'
   },
   users: {
     title: 'Users & roles', invite: 'Invite contractor / staff', inviteHint: 'When the invited person signs in with this e-mail (e-mail link or password) they get the role automatically',
+    staffTitle: 'Staff without an account', staffHint: 'Technicians from the old CPFM system and anyone added here can be put on jobs before they have an account. Enter their e-mail: when they sign in with it, the record and its jobs become theirs. Or link an existing account directly.',
+    staffCode: 'Staff code', noAccount: 'No account yet', linkEmail: 'E-mail for automatic linking', waitingFor: 'Links when {email} signs in',
+    linkAccount: 'Link to an existing account', unlink: 'Unlink', unlinkConfirm: 'Unlink {name} from this account?', inactive: 'Inactive',
+    addStaff: 'Add staff (no account yet)', addStaffHint: 'They can be put on jobs right away and linked to an account later',
     invites: 'Pending invites', lastLogin: 'Last sign-in', changeRole: 'Change role', filterRole: 'Filter by role'
   },
   qr: {
     title: 'QR codes for reporting', hint: 'Print and post in buildings/rooms. Scanning opens the form with the location pre-selected.',
     wholeBuilding: 'Whole building', scan: 'Scan to report a problem'
   },
+  asset: {
+    title: 'Machines & equipment', one: 'Asset', count: '{n} items', add: 'Add machine / equipment', searchPh: 'Search code, name, brand, model…',
+    more: 'and {n} more — search or filter to see them', group: 'System', type: 'Type', status: 'Status', request: 'Work order',
+    code: 'Code', name: 'Name', installedAt: 'Received / installed', brand: 'Brand', model: 'Model', serial: 'Serial no.', supplier: 'Supplier',
+    qty: 'Quantity', unit: 'Unit', price: 'Unit price', warranty: 'Warranty (years)', life: 'Service life (years)', checklist: 'Check list',
+    detail: 'Details', remark: 'Remarks', updated: 'Last changed', log: 'Repair / maintenance log', addLog: 'Add log entry',
+    logPh: 'Log entry for {code}…', action: 'Action', date: 'Date', newStatus: 'Change status to', cost: 'Cost',
+    downtime: 'Breakdown time', jobs: 'Work orders for this asset', history: 'Change history', edited: 'Details changed', created: 'Created'
+  },
+  assetStatus: { normal: 'Normal', repair: 'Under repair', written_off: 'Written off', expired: 'Expired' },
+  assetAction: { pm: 'Maintenance', repair: 'Repair', change: 'Change / upgrade', transfer: 'Move', install: 'Install', other: 'Other' },
+  material: {
+    title: 'Materials & spare parts', add: 'Add material', searchPh: 'Search code, name, brand…', store: 'Store',
+    lowOnly: 'At or below min only', showInactive: 'Show inactive', reorder: 'Reorder', onHand: 'On hand',
+    stockCard: 'Stock card', in: 'Stock in', out: 'Issue stock', forJob: 'Job no.', moveTitle: 'Entry',
+    jobNotFound: 'Job number not found', usedNote: 'Issued {name} {qty} {unit}', used: 'Materials and asset repairs on this job',
+    issue: 'Issue material', outFor: 'Issued for job {no}'
+  },
+  pm: {
+    title: 'Preventive maintenance plans', one: 'PM plan', plans: 'PM plans with this asset', add: 'Add PM plan', searchPh: 'Search PM number, title…',
+    genTo: 'Work orders up to', gen: 'Create', genHelp: 'Creates a work order for every due date from today to the chosen date that has none yet',
+    nothingDue: 'Nothing due in that range', genConfirm: 'Create {n} work orders?', generated: '{n} work order(s) created',
+    next: 'Next', every: 'every {n} {unit}', planTitle: 'Title', start: 'Starts', end: 'Repeats until', repeat: 'Repeat',
+    remind: 'Remind before', tasks: 'Tasks to do', assets: 'Machines', pickAsset: 'Choose a machine',
+    schedule: 'Due dates', makeJob: 'Create work order', jobs: 'Work orders', today: 'Today'
+  },
+  repeat: { none: 'Does not repeat', minute: 'minute(s)', hour: 'hour(s)', day: 'day(s)', week: 'week(s)', month: 'month(s)', quarter: 'quarter(s)', year: 'year(s)' },
+  cpfm: { overwritten: 'This record comes from the old CPFM system. The next import overwrites changes made here (edit it in CPFM until CPFM is switched off).' },
   err: {
     required: 'Please fill in all required fields', pdpa: 'Please accept the PDPA consent', permission: 'You do not have permission to view this page',
     tooMany: 'Up to {n} photos', image: 'Could not process this image'

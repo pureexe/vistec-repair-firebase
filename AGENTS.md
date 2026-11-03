@@ -20,11 +20,12 @@ src/
   firebase.js           Firebase init from VITE_* env vars
   styles/main.scss      Bulma 1.x with VISTEC colors (primary #582E91, danger/accent #A0223A)
   i18n/{th,en}.js       all UI strings — never hard-code text in components
-  stores/               tiny reactive stores (auth.js, master.js, toast.js)
-  services/             Firebase access (jobs.js, authService.js, master.js, images.js, geo.js, util.js)
+  stores/               tiny reactive stores (auth.js, master.js, inventory.js, toast.js)
+  services/             Firebase access (jobs.js, authService.js, master.js, images.js, geo.js, util.js,
+                        inventory.js = assets / materials / stock card, pm.js + pmSchedule.js = PM plans)
   router/index.js       routes + role guards (meta.roles)
   components/           shared UI (StatusTag, JobCard, Timeline, PhotoPicker, …)
-  views/                pages (public, reporter, staff, admin)
+  views/                pages (public, reporter, staff, admin; assets/ = เครื่องจักรและอุปกรณ์ + วัสดุ, pm/ = การบำรุงรักษา)
 functions/              Cloud Functions (e-mail on job events)
 database.rules.json     RTDB rules  (GENERATED — edit scripts/build-rules.py, then run it)
 scripts/build-rules.py  source of the RTDB rules
@@ -44,8 +45,17 @@ firebase.json           hosting / rules / functions config
 - The staff job list is **paged in the database** (50 per page) via sort keys in `jobs/{id}/idx` (DB.md → Paging).
   Change status / site / building only through `services/jobs.js` (`applyJobChange`), which keeps `idx` in sync.
   Add a filter = add a key in `services/jobIndex.js` + its `.indexOn` in `scripts/build-rules.py`.
+- The **job number is the only tracking id** (`/t/WO2026-2557`, `/tracking/{jobNo}`); there is no separate code.
+  App jobs use `/config/public/jobPrefix` (`VR` while CPFM runs). ผู้ปฏิบัติงาน are `jobs/{id}/assignees` (several);
+  change them only via `addAssignee` / `removeAssignee`, which keep `assigneeKeys` and `/assignments` in step.
+  People without an account are `/staff` records, linked to an account later (Users page). See DB.md.
 - Records with ids starting `cpfm_` and a `cpfm` child come from the old system and are overwritten by the next
   import. Edit them in CPFM, or accept that the importer will undo your edit.
+- **Assets & PM** (`/assets`, `/materials`, `/pm`, technician + admin only): stock in/out only through
+  `services/inventory.js → addStockMove` (it moves `materials/*/onHand` with `increment()` in the same write, and adds a
+  job comment when issued to a job). PM due dates are never stored: `services/pmSchedule.js → occurrences()` computes
+  them from the repeat rule (the importer uses the same file). Work orders from a plan go through `services/pm.js →
+  createPmJob`, which records `pmPlans/{id}/jobs/{dueMs}` so a due date never gets two. See DB.md.
 - Roles: `user`, `contractor`, `technician`, `admin` (see DB.md). Guard routes with `meta.roles` and keep rules in sync.
 - When you change the rules, add a case to `tests/rules.test.mjs` and run it.
 - Bulma is themed in `src/styles/main.scss`. Light theme only (the client asked for a white theme), so do not re-enable Bulma's dark theme.
@@ -58,6 +68,7 @@ any run that goes over it.** The importer stops by itself if the estimate is ove
 ```
 npm run import:cpfm                 # scrape + print the estimate, uploads nothing
 npm run import:cpfm -- --yes        # upload; check the estimate first. Detach it for long runs:
+npm run import:cpfm -- --only=assets,pm --yes   # just assets, materials, stock card, PM (minutes, no Storage uploads)
 setsid nohup node --max-old-space-size=8192 scripts/import-cpfm.mjs --yes > .cpfm-cache/import.log 2>&1 < /dev/null & disown
 ```
 - **Do not pass `--photos-since`** on the monthly run. The first import (1 Nov 2026) used `--photos-since=2023-11-01`,
@@ -65,7 +76,7 @@ setsid nohup node --max-old-space-size=8192 scripts/import-cpfm.mjs --yes > .cpf
   added after the last run, and removes the old links. See TODO.md Phase 3b for status.
 - If the estimate shows more than 5,000 uploads, split it: `--photos-since=<date>` uploads only newer photos and
   leaves older ones as links for next month. Tell the user the numbers.
-- After the run, check `/config/cpfmImport` (stats) and the end of `.cpfm-cache/import.log`, then tick TODO.md.
+- After the run, check `/config/cpfmImport` (stats; `--only` runs write `/config/cpfmImport/sections/{names}`) and the end of `.cpfm-cache/import.log`, then tick TODO.md.
 - `.cpfm-cache/` (notes, attachment lists, converted photos) makes re-runs quick. Don't delete it; it's git-ignored.
 
 ## Commands

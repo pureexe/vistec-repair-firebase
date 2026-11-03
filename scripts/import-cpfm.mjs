@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Import jobs + master data from the old CPFM system (enco.bi-cpfm.com) into our Realtime Database.
+ * Import jobs, assets, materials (stock card), PM plans + master data from the old CPFM system (enco.bi-cpfm.com)
+ * into our Realtime Database.
  * The old system wins: every run overwrites the imported fields with what CPFM currently shows.
  * Data that exists only in the new system (photos, GPS, events written by the new app) is kept.
  *
@@ -10,6 +11,9 @@
  *
  * Flags:
  *   --dry-run         don't write to Firebase (still reads it if credentials are set)
+ *   --only=A,B        sections to import: jobs, assets (machines, repair log, materials, stock card), pm (default: all).
+ *                     Sites, buildings, areas, job types and staff are always refreshed. `--only=assets,pm` touches no
+ *                     photos (no Storage uploads) and takes a few minutes.
  *   --site=A,B        CPFM site codes to import (default: all = THEENCONY,PTTEP,VISTEC,KVIS)
  *   --from=YYYY-MM-DD only jobs reported on/after this date
  *   --limit=N         at most N jobs per site (newest first) — for testing
@@ -35,11 +39,13 @@
  *
  * How the old site works and how this maps onto our tree: CPFM_IMPORT.md
  */
-import { createHash, randomInt } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { jobIndex } from '../src/services/jobIndex.js'
+import { assigneeKeyString } from '../src/services/util.js'
+import { occurrences } from '../src/services/pmSchedule.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CACHE = join(ROOT, '.cpfm-cache')
@@ -62,6 +68,9 @@ const CONC = Number(argv.concurrency || 4)
 const LIMIT = argv.limit ? Number(argv.limit) : Infinity
 const FROM = argv.from || ''
 const SITES_WANTED = argv.site ? String(argv.site).split(',').map((s) => s.trim().toUpperCase()) : null
+const ONLY = new Set(argv.only ? String(argv.only).split(',').map((s) => s.trim().toLowerCase()) : ['jobs', 'assets', 'pm'])
+if ([...ONLY].some((x) => !['jobs', 'assets', 'pm'].includes(x))) die('--only takes jobs, assets, pm')
+const JOBS = ONLY.has('jobs')
 
 const BASE = (process.env.EXISTING_SYSTEM_URL || 'https://enco.bi-cpfm.com/').replace(/\/?$/, '/')
 const USER = process.env.EXISTING_SYSTEM_USERNAME
@@ -120,8 +129,6 @@ const tsBkk = (s) => {
   const t = Date.parse(iso)
   return Number.isFinite(t) ? t : null
 }
-const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // same alphabet as src/services/util.js
-const randomCode = () => Array.from({ length: 8 }, () => ALPHA[randomInt(ALPHA.length)]).join('')
 const emailKey = (e) => String(e || '').trim().toLowerCase()
 
 /** "อาคาร R1.1 ชั้น2" → { building: "อาคาร R1.1", floor: "ชั้น 2" }; no floor → floor null */
@@ -218,6 +225,17 @@ async function webpOf(f) {
   writeFileSync(metaFile, JSON.stringify(meta))
   return { buf: data, ...meta }
 }
+/** Every row of a CPFM grid, 1000 at a time */
+async function grid(path, params = {}) {
+  const rows = []
+  for (let start = 0; ; start += 1000) {
+    const d = await call(path, { start, limit: 1000, ...params })
+    rows.push(...(d.data || []))
+    if (!d.data?.length || rows.length >= Number(d.total)) return rows
+  }
+}
+// authen_location=y only for machines: materials have no location, and the filter hides them all
+const ASSET_GRID = (menu, cat, act) => `assets/assets_action.php?menu=${menu}&row_type=&row_id=&assetlocation=&assettype=assettype&asset_category=${cat}${cat === 'assets' ? '&authen_location=y' : ''}&act=${act}&status_type=assets`
 const readAll = async (db, path) => (db ? (await db.ref(path).get()).val() || {} : {})
 
 /**
@@ -248,6 +266,280 @@ function estimate(up, photoJobs) {
   return { text, numbers: { ...numbers, overFreeTier: over } }
 }
 
+/* ---------------- เครื่องจักรและอุปกรณ์, วัสดุอุปกรณ์ (stock card), PM plans ---------------- */
+const pmCounters = {} // yyyy → highest CPFM PM number (counters/pm/{yyyy})
+const ASSET_STATUS = { 1: 'normal', 2: 'repair', 3: 'written_off', 4: 'expired' }
+const ASSET_ACTION = { PM: 'pm', REPAIR: 'repair', CHANGE: 'change', TRANSFER: 'transfer', INSTALL: 'install' }
+const REPEAT = { MINUTE: 'minute', HOUR: 'hour', DAY: 'day', WEEK: 'week', MONTH: 'month', QUARTER: 'quarter', YEAR: 'year' }
+const num = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v))
+
+/**
+ * Assets (asset_category=assets), materials (equipt), their stock card (stocks), repair log (asset_category=repair,
+ * one request per asset), check lists, asset categories and PM plans (pm_action.php). Small: hundreds of records.
+ * Record ids: cpfm_as{asset_id}, cpfm_m{asset_id}, cpfm_mc_{hash(code)} (a code only seen on the stock card),
+ * cpfm_sk{stk_id}, cpfm_al{asset_id}, cpfm_pm{sched_id}, cpfm_at_{code}, cpfm_cl_{code}. See CPFM_IMPORT.md.
+ */
+async function importInventory({ db, cur, up, set, findBy, stats, sites, locByCode, area, assetRows, assetIdByCode, jobNoById, jobTypeIdOf }) {
+  const ASSETS = ONLY.has('assets')
+  const PM = ONLY.has('pm')
+  if (!ASSETS && !PM) return
+  log('→ assets, materials, PM plans')
+  mkdirSync(join(CACHE, 'inv'), { recursive: true })
+  const write = (coll, id, rec, counter) => {
+    const prev = cur[coll][id]
+    const h = hash(JSON.stringify(rec), 16)
+    if (prev?.cpfm?.hash === h && !FORCE) return false
+    set(`${coll}/${id}`, { ...rec, cpfm: { ...rec.cpfm, hash: h } })
+    stats[counter]++
+    return true
+  }
+
+  /* where a record is: CPFM location code, else "site > area" name */
+  const siteByName = {}
+  for (const [code, st] of Object.entries(sites)) siteByName[norm(st.nameTh)] = code
+  function place(code, full, group) {
+    const hit = locByCode[clean(code)]
+    if (hit) return hit
+    const parts = String(full || '').split('>').map(clean).filter(Boolean)
+    const siteCode = siteByName[norm(group || parts[0])]
+    if (!siteCode || !parts.length) return { siteId: siteCode ? sites[siteCode].id : null, buildingId: null, areaId: null }
+    const { building: bName, floor } = splitLocation(parts.at(-1))
+    return { siteId: sites[siteCode].id, ...area(siteCode, bName, floor) }
+  }
+  const userName = (s) => clean(s).slice(0, 120)
+  const stamps = (r) => {
+    const createdAt = tsBkk(r.users_date) || null
+    return { createdAt, updatedAt: tsBkk(r.users_update) || createdAt, createdBy: userName(r.users_date_by), updatedBy: userName(r.users_update_by || r.users_date_by) }
+  }
+  // a job referred to by the stock card / repair log: only link it when it exists (imported now or already in the DB)
+  const jobRef = {}
+  async function jobOf(taskId) {
+    if (!taskId) return { jobId: null, jobNo: null }
+    const id = `cpfm_${taskId}`
+    if (jobNoById[taskId]) return { jobId: id, jobNo: jobNoById[taskId] }
+    if (!(taskId in jobRef)) jobRef[taskId] = cur.jobs[id]?.jobNo || (db ? (await db.ref(`jobs/${id}/jobNo`).get()).val() : null)
+    return jobRef[taskId] ? { jobId: id, jobNo: jobRef[taskId] } : { jobId: null, jobNo: null }
+  }
+  // attachment list + comment log of an asset / material / plan, cached until its users_update changes
+  async function extras(rowType, rowId, stamp) {
+    const f = join(CACHE, 'inv', `${rowType}-${rowId}.json`)
+    if (!argv['refresh-notes'] && existsSync(f)) {
+      const c = JSON.parse(readFileSync(f, 'utf8'))
+      if (c.stamp === stamp) return c
+    }
+    const docs = FILES ? (await call(`document/document_action.php?menu=&status_type=document&row_id=${rowId}&row_type=${rowType}&category=&act=grid`, { start: 0, limit: 100 })).data || [] : []
+    const notes = NOTES ? (await call('notes/note_action.php', { act: 'grid', row_type: rowType, row_id: rowId, start: 0, limit: 500 })).data || [] : []
+    const c = { stamp, docs, notes }
+    writeFileSync(f, JSON.stringify(c))
+    return c
+  }
+  function putExtras(coll, id, { docs, notes }) {
+    const prev = cur[coll][id] || {}
+    for (const d of docs) {
+      if (d.f_status === '0' || !d.f_url) continue
+      const link = { name: clean(d.f_name).slice(0, 200) || `cpfm_f${d.f_id}`, url: fileUrl(d), type: String(d.f_type || '').toLowerCase(), bytes: Number(d.f_size) || 0, by: clean(d.users_date_by), at: tsBkk(d.users_date) }
+      if (JSON.stringify(prev.files?.[`cpfm_f${d.f_id}`]) !== JSON.stringify(link)) up[`${coll}/${id}/files/cpfm_f${d.f_id}`] = link
+    }
+    for (const n of notes) {
+      const line = { at: tsBkk(n.users_date) || 0, byUid: 'cpfm', byName: userName(n.users_date_by), note: clean([n.note_status, n.note_detail].filter(Boolean).join(': ')).slice(0, 3000) }
+      if (JSON.stringify(prev.history?.[`cpfm_n${n.note_id}`]) !== JSON.stringify(line)) up[`${coll}/${id}/history/cpfm_n${n.note_id}`] = line
+    }
+  }
+
+  /* categories (ระบบงาน → ประเภท), brands, check lists */
+  const typeIds = {}
+  const groups = await lookup({ type_category: 'assettype', type_parent: '0', order_by: 'type_order' })
+  const types = await lookup({ type_category: 'assettype', type_parent: 'sub', order_by: 'type_order' })
+  for (const [list, isGroup] of [[groups, true], [types, false]]) {
+    list.forEach((t, i) => {
+      const code = clean(t.type_code)
+      const id = findBy('assetTypes', (v) => v.cpfm?.code === code) || `cpfm_at_${keySafe(code)}`
+      typeIds[code] = id
+      if (!cur.assetTypes[id]) stats.assetTypes++
+      // names mix Thai and English mid-sentence ("ระบบโทรศัพท์ และระบบ Network/…"), so keep them whole
+      set(`assetTypes/${id}`, { code, nameTh: clean(t.type_name) || code, nameEn: clean(t.type_name_en) || cur.assetTypes[id]?.nameEn || '', parentId: isGroup ? null : typeIds[clean(t.type_parent)] || null,
+        order: Number(t.type_order) || i + 1, active: t.type_status !== '0', cpfm: { code } })
+    })
+  }
+  const brandName = {}
+  for (const b of await lookup({ type_category: 'assetbrand', order_by: 'type_code', partial: 'y' })) brandName[clean(b.type_code)] = clean(b.type_name)
+  const clIds = {}
+  const clItems = await lookup({ type_category: 'asset-checklist', type_parent: 'sub', partial: 'y' })
+  for (const c of await lookup({ type_category: 'asset-checklist', order_by: 'type_code', partial: 'y', type_parent: '0' })) {
+    const code = clean(c.type_code)
+    const id = findBy('checklists', (v) => v.cpfm?.code === code) || `cpfm_cl_${keySafe(code)}`
+    clIds[code] = id
+    if (!cur.checklists[id]) stats.checklists++
+    // items belong to the template by code, or by the name the template is called after ("ฟอร์ม Air SplitType" ↔ "Air SplitType")
+    const items = {}
+    for (const it of clItems.filter((x) => clean(x.type_parent) === code || norm(c.type_name).includes(norm(x.type_parent)))) {
+      const [kind, options = ''] = String(it.type_name || '').split('|')
+      items[keySafe(it.type_code)] = { order: Number(it.type_order) || 0, label: clean(it.type_color || it.type_name).slice(0, 300), kind: clean(kind).slice(0, 20) || 'text', options: clean(options).slice(0, 500) }
+    }
+    up[`checklists/${id}`] = { code, nameTh: clean(c.type_name), active: c.type_status !== '0', items, cpfm: { code } }
+  }
+
+  if (ASSETS) {
+    /* เครื่องจักรและอุปกรณ์ */
+    const assetIds = new Set()
+    for (const r of assetRows) {
+      const id = `cpfm_as${r.asset_id}`
+      assetIds.add(id)
+      if (!cur.assets[id]) stats.assets++
+      let unit = clean(r.asset_unit)
+      if (locByCode[unit] || unit === clean(r.asset_location)) unit = '' // CPFM rows often have the location code in the unit column
+      const rec = {
+        code: (clean(r.asset_code) || id).slice(0, 80), name: (clean(r.asset_title) || clean(r.asset_code) || id).slice(0, 200), typeId: typeIds[clean(r.asset_type)] || null,
+        ...place(r.asset_location, r.assetlocation, r.assetlocationgroup), locationDetail: clean(r.asset_floor).slice(0, 200),
+        status: ASSET_STATUS[r.asset_status] || 'normal', brand: (brandName[clean(r.asset_brand)] || clean(r.asset_brand)).slice(0, 120),
+        model: clean(r.asset_model).slice(0, 120), serial: clean(r.asset_sn).slice(0, 120), supplier: clean(r.asset_vendor).slice(0, 120),
+        qty: num(r.asset_amount), unit: unit.slice(0, 40), price: num(r.asset_price), installedAt: tsBkk(r.asset_date),
+        warrantyYears: num(r.asset_warantee), lifeYears: num(r.asset_livetime), pm: r.asset_pm === 'PM', qm: r.asset_qm === 'QM',
+        checklistId: clIds[clean(r.asset_checklist)] || null, detail: clean(r.asset_detail).slice(0, 3000), remark: clean(r.asset_remark).slice(0, 3000),
+        ...stamps(r), cpfm: { id: r.asset_id, code: clean(r.asset_code), location: clean(r.asset_location), type: clean(r.asset_type), brand: clean(r.asset_brand) }
+      }
+      write('assets', id, rec, 'assetsChanged')
+    }
+
+    /* ซ่อมเครื่องจักร: repair log, one request per asset (asset_category=repair rows, row_id = the job) */
+    const logIds = new Set()
+    let n = 0
+    await pool(assetRows, CONC, async (r) => {
+      const assetId = `cpfm_as${r.asset_id}`
+      const rows = await grid(`assets/assets_action.php?menu=asset-list&row_type=assets&row_id=${r.asset_id}&asset_location=&act=grid&asset_code=${encodeURIComponent(r.asset_code)}&asset_category=repair&status_type=tasks`)
+      const ex = await extras('assetslist', r.asset_id, `${r.users_update || r.users_date}`)
+      putExtras('assets', assetId, ex)
+      for (const l of rows) {
+        const id = `cpfm_al${l.asset_id}`
+        logIds.add(id)
+        if (!cur.assetLogs[id]) stats.assetLogs++
+        const job = l.row_type === 'tasks' ? await jobOf(l.row_id) : { jobId: null, jobNo: null }
+        const at = tsBkk(l.asset_date) || tsBkk(l.users_date) || 0
+        write('assetLogs', id, {
+          assetId, action: ASSET_ACTION[clean(l.asset_action).toUpperCase()] || 'other', at, detail: clean(l.asset_detail).slice(0, 3000),
+          qty: num(l.asset_amount), unit: clean(l.asset_unit).slice(0, 40), cost: num(l.asset_price), downtime: clean(l.asset_min).slice(0, 40),
+          ...job, jobNo: job.jobNo || clean(l.task_code) || null, byUid: 'cpfm', byName: userName(l.users_date_by), createdAt: tsBkk(l.users_date) || at,
+          cpfm: { id: l.asset_id, task: l.row_id || null }
+        }, 'assetLogsChanged')
+      }
+      if (++n % 100 === 0) log(`  repair logs of ${n}/${assetRows.length} assets`)
+    })
+
+    /* วัสดุอุปกรณ์ + stock card */
+    const matRows = await grid(ASSET_GRID('asset-equipt', 'equipt', 'gridequipt'))
+    const moveRows = await grid('stocks/stocks_action.php?menu=asset-equipt&stk_category=equipt&stk_location=&stk_code=&act=grid&status_type=stocks')
+    log(`  ${assetRows.length} assets, ${logIds.size} repair log lines, ${matRows.length} materials, ${moveRows.length} stock card lines`)
+    const matIdByCode = {}
+    const cpfmStock = {} // material id → CPFM's own on-hand (the grid's stock column), to check our sum
+    for (const r of matRows) {
+      const id = `cpfm_m${r.asset_id}`
+      matIdByCode[clean(r.asset_code)] = id
+      cpfmStock[id] = num(r.stock) || 0
+      if (!cur.materials[id]) stats.materials++
+      write('materials', id, {
+        code: (clean(r.asset_code) || id).slice(0, 80), name: (clean(r.asset_title) || id).slice(0, 200), typeId: typeIds[clean(r.asset_type)] || null,
+        store: clean(r.asset_store).slice(0, 80), brand: (brandName[clean(r.asset_brand)] || clean(r.asset_brand)).slice(0, 120), model: clean(r.asset_model).slice(0, 120),
+        serial: clean(r.asset_sn).slice(0, 120), supplier: clean(r.asset_vendor).slice(0, 120), unit: clean(r.asset_unit).slice(0, 40), price: num(r.asset_price),
+        min: num(r.asset_min), max: num(r.asset_max), detail: clean(r.asset_detail).slice(0, 3000), remark: clean(r.asset_remark).slice(0, 3000), active: true,
+        ...stamps(r), cpfm: { id: r.asset_id, code: clean(r.asset_code), type: clean(r.asset_type) }
+      }, 'materialsChanged')
+      putExtras('materials', id, await extras('equipt', r.asset_id, `${r.users_update || r.users_date}`))
+    }
+    // codes that are only on the stock card (items deleted in CPFM): keep their history under an inactive material
+    for (const r of moveRows) {
+      const code = clean(r.stk_code)
+      if (matIdByCode[code]) continue
+      const id = `cpfm_mc_${hash(code)}`
+      matIdByCode[code] = id
+      if (!cur.materials[id]) stats.materials++
+      write('materials', id, { code: (code || id).slice(0, 80), name: (clean(r.stk_asset) || code || id).slice(0, 200), unit: clean(r.stk_unit).slice(0, 40), price: num(r.stk_price),
+        store: clean(r.stk_store).slice(0, 80), active: false, cpfm: { code, stockCardOnly: true } }, 'materialsChanged')
+    }
+    const moveIds = new Set()
+    const sums = {}
+    for (const r of moveRows) {
+      const id = `cpfm_sk${r.stk_id}`
+      moveIds.add(id)
+      const materialId = matIdByCode[clean(r.stk_code)]
+      const type = r.stk_type === 'in' ? 'in' : 'out'
+      const qty = Math.abs(num(r.stock) ?? num(r.stk_amount) ?? 0)
+      const delta = type === 'in' ? qty : -qty
+      if (num(r.stock) !== null && num(r.stock) !== delta) log(`  ⚠ stock line ${r.stk_id}: ${r.stk_type} with stock ${r.stock}`)
+      sums[materialId] = (sums[materialId] || 0) + delta
+      if (!qty) continue // the rules need qty > 0; a 0 line changes nothing
+      if (!cur.stockMoves[id]) stats.stockMoves++
+      const job = r.row_type === 'tasks' ? await jobOf(r.row_id) : { jobId: null, jobNo: null }
+      const at = tsBkk(r.stk_date) || tsBkk(r.users_date) || 0
+      write('stockMoves', id, {
+        materialId, code: clean(r.stk_code).slice(0, 80), name: clean(r.stk_asset).slice(0, 200), type, qty, delta, unit: clean(r.stk_unit).slice(0, 40),
+        price: num(r.stk_price), total: num(r.stk_total), store: clean(r.stk_store).slice(0, 80), title: clean(r.stk_title).slice(0, 200),
+        detail: clean([r.stk_detail, r.stk_remark].filter((x) => clean(x)).join('\n')).slice(0, 1000),
+        ...place(r.stk_location, r.location ? `${r.locationgroup || ''} > ${r.location}` : '', r.locationgroup), ...job,
+        at, byUid: 'cpfm', byName: userName(r.users_date_by), createdAt: tsBkk(r.users_date) || at, cpfm: { id: r.stk_id, task: r.row_id || null }
+      }, 'stockMovesChanged')
+    }
+    // on-hand = CPFM's lines + lines entered in the new app
+    for (const [id, m] of Object.entries(cur.stockMoves)) if (m && !m.cpfm && m.materialId) sums[m.materialId] = (sums[m.materialId] || 0) + (Number(m.delta) || 0)
+    for (const id of new Set([...Object.values(matIdByCode), ...Object.keys(sums)])) {
+      const v = sums[id] || 0
+      if (cur.materials[id]?.onHand !== v) up[`materials/${id}/onHand`] = v
+    }
+    const off = Object.entries(cpfmStock).filter(([id, v]) => {
+      const appOnly = Object.values(cur.stockMoves).filter((m) => m && !m.cpfm && m.materialId === id).reduce((a, m) => a + (Number(m.delta) || 0), 0)
+      return (sums[id] || 0) - appOnly !== v
+    })
+    if (off.length) log(`  ⚠ ${off.length} materials: the stock card does not add up to CPFM's on-hand (${off.slice(0, 5).map(([id]) => id).join(', ')})`)
+    // lines deleted in CPFM disappear here too, so on-hand keeps matching
+    if (!SITES_WANTED) {
+      for (const [coll, seen] of [['stockMoves', moveIds], ['assetLogs', logIds]]) {
+        for (const id of Object.keys(cur[coll])) if (id.startsWith('cpfm_') && !seen.has(id)) { up[`${coll}/${id}`] = null; stats.removed++ }
+      }
+    }
+  }
+
+  if (PM) {
+    /* แผนบำรุงรักษา: the repeat rule, its machines, and the work orders CPFM made for it */
+    const plans = await grid('pm/pm_action.php?menu=pm-list&row_type=PM&authen_location=y&act=grid&status_type=preventive&mode=')
+    const knownAsset = (aid) => cur.assets[aid] || assetRows.some((r) => `cpfm_as${r.asset_id}` === aid)
+    for (const r of plans) {
+      const id = `cpfm_pm${r.sched_id}`
+      if (!cur.pmPlans[id]) stats.pmPlans++
+      const y = clean(r.sched_code).match(/^PM(\d{4})-(\d+)$/)
+      if (y) pmCounters[y[1]] = Math.max(pmCounters[y[1]] || 0, Number(y[2]))
+      const assets = {}
+      for (const a of (await call('assets/assets_action.php?act=listassetspm&asset_pm=PM', { sched_id: r.sched_id })).data || []) {
+        const aid = `cpfm_as${a.asset_id}`
+        if (knownAsset(aid)) assets[aid] = true
+      }
+      const rec = {
+        code: clean(r.sched_code), title: (clean(r.sched_title) || clean(r.sched_code)).slice(0, 200), detail: clean(r.sched_detail).slice(0, 3000),
+        ...place(r.sched_location, r.schedulelocation ? `${r.locationgroup || ''} > ${r.schedulelocation}` : '', r.locationgroup),
+        jobTypeId: jobTypeIdOf(clean(r.sched_tasktype) || 'PM'), priority: PRIORITY[r.sched_priority] || 'normal',
+        start: tsBkk(r.sched_start), end: tsBkk(r.sched_end), repeat: REPEAT[clean(r.sched_repeat).toUpperCase()] || 'none',
+        every: Math.max(1, num(r.sched_freq_value) || 1), lastAt: tsBkk(r.sched_last),
+        remind: num(r.sched_remind_value) ? { n: num(r.sched_remind_value), unit: REPEAT[clean(r.sched_remind).toUpperCase()] || 'day' } : null,
+        active: r.sched_status === '1', checklistId: clIds[clean(r.sched_template)] || null, assets: Object.keys(assets).length ? assets : null,
+        ...stamps(r), cpfm: { id: r.sched_id, location: clean(r.sched_location), asset: clean(r.sched_asset) }
+      }
+      write('pmPlans', id, rec, 'pmPlansChanged')
+      putExtras('pmPlans', id, await extras('pm', r.sched_id, `${r.users_update || r.users_date}`))
+      // CPFM's own calendar (แผนตามปฏิทิน): check our repeat rule gives the same dates, and pick up the work orders it made
+      const sched = (await call(`pm/pm_action.php?menu=pm-list&row_type=pm&row_id=${r.sched_id}&act=gridschedule`, { start: 0, limit: 1000 })).data || []
+      const theirs = sched.flatMap((x) => String(x.sch_date || '').split(',')).map(tsBkk).filter(Boolean)
+      const ours = rec.start ? occurrences(rec, 0, rec.end || Math.max(...theirs, rec.start), 5000) : []
+      const missing = theirs.filter((t) => !ours.includes(t)).length
+      if (missing) log(`  ⚠ ${rec.code}: ${missing} of CPFM's ${theirs.length} planned dates don't follow its repeat rule (${rec.repeat} × ${rec.every}); we use the rule`)
+      for (const x of sched.filter((x) => clean(x.task_code))) {
+        const j = db && (await db.ref('jobs').orderByChild('jobNo').equalTo(clean(x.task_code)).get()).val()
+        const jobId = j && Object.keys(j)[0]
+        const at = tsBkk(String(x.sch_date || '').split(',')[0])
+        if (jobId && at && cur.pmPlans[id]?.jobs?.[at] !== jobId) up[`pmPlans/${id}/jobs/${at}`] = jobId
+      }
+    }
+    log(`  ${plans.length} PM plans`)
+  }
+}
+
 /* ================================================================= */
 async function main() {
   for (const d of ['notes', 'docs', 'photos']) mkdirSync(join(CACHE, d), { recursive: true })
@@ -257,9 +549,11 @@ async function main() {
   const db = await openDb()
   log('→ reading current Firebase data')
   const cur = {}
-  for (const k of ['sites', 'buildings', 'areas', 'jobTypes', 'users', 'jobs']) cur[k] = await readAll(db, k)
+  for (const k of ['sites', 'buildings', 'areas', 'jobTypes', 'staff', 'users', ...(JOBS ? ['jobs'] : []),
+    'assetTypes', 'checklists', 'assets', 'assetLogs', 'materials', 'stockMoves', 'pmPlans']) cur[k] = await readAll(db, k)
+  cur.jobs ||= {}
   let bucket = null
-  if (FILES && PHOTOS === 'storage' && !DRY) {
+  if (JOBS && FILES && PHOTOS === 'storage' && !DRY) {
     const { getStorage } = await import('firebase-admin/storage')
     bucket = getStorage(fbApp).bucket()
     const [ok] = await bucket.exists().catch((e) => die(`Storage: ${e.message}`))
@@ -268,7 +562,8 @@ async function main() {
   const photoJobs = [] // { jobId, pid, f, at } — downloaded + stored after the scrape
 
   const up = {} // one big multi-path update, flushed in chunks
-  const stats = { sites: 0, buildings: 0, areas: 0, jobTypes: 0, jobsNew: 0, jobsChanged: 0, jobsSame: 0, events: 0, notesFetched: 0, docsFetched: 0, photos: 0, fileLinks: 0, photoErrors: 0, reindexed: 0 }
+  const stats = { sites: 0, buildings: 0, areas: 0, jobTypes: 0, staff: 0, jobsNew: 0, jobsChanged: 0, jobsSame: 0, events: 0, notesFetched: 0, docsFetched: 0, photos: 0, fileLinks: 0, photoErrors: 0, reindexed: 0,
+    assetTypes: 0, checklists: 0, assets: 0, assetsChanged: 0, assetLogs: 0, assetLogsChanged: 0, materials: 0, materialsChanged: 0, stockMoves: 0, stockMovesChanged: 0, pmPlans: 0, pmPlansChanged: 0, removed: 0 }
   const set = (path, obj) => { for (const [k, v] of Object.entries(obj)) up[`${path}/${k}`] = v ?? null }
   const findBy = (coll, pred) => Object.entries(cur[coll]).find(([, v]) => v && pred(v))?.[0]
 
@@ -356,15 +651,40 @@ async function main() {
   const types = await lookup({ type_category: 'tasktype', order_by: 'type_order' })
   types.forEach((t, i) => jobType(t.type_code, t.type_name, t.type_status === '1', i + 1))
 
+  /* ---------- ผู้ปฏิบัติงาน: CPFM staff → /staff records, linked to an account later (Users page / sign-in e-mail) ---------- */
+  const staffIds = {} // CPFM staff code → staff id
+  function staffMember(code, name, active, siteCode = '') {
+    code = String(code || '').trim()
+    if (!code) return null
+    if (staffIds[code]) return staffIds[code]
+    const id = findBy('staff', (v) => v.cpfm?.code === code) || `cpfm_s${keySafe(code)}`
+    staffIds[code] = id
+    const prev = cur.staff[id] || {}
+    // uid / email / company are set in the app and left alone
+    set(`staff/${id}`, { name: (clean(name) || prev.name || code).slice(0, 120), code, role: prev.role || 'technician', active, siteId: sites[siteCode]?.id || prev.siteId || null, cpfm: { code } })
+    if (!cur.staff[id]) stats.staff++
+    return id
+  }
+  for (const m of await lookup({ type_category: 'taskstaffen', order_by: 'type_code', authen_comment: 'y' })) {
+    staffMember(m.type_code, m.type_name, m.type_status === '1', clean(m.type_comment))
+  }
+
   /* ---------- users by e-mail (so people see their old jobs under "My jobs") ---------- */
   const uidByEmail = {}
   for (const [uid, u] of Object.entries(cur.users)) if (u?.email) uidByEmail[emailKey(u.email)] = uid
   const ownJobNos = new Set(Object.values(cur.jobs).filter((j) => j && !j.cpfm).map((j) => j.jobNo))
 
+  /* ---------- machine codes (jobs can name one in task_asset) ---------- */
+  const assetRows = JOBS || ONLY.has('assets') || ONLY.has('pm') ? await grid(ASSET_GRID('asset-list', 'assets', 'gridassets')) : []
+  const assetIdByCode = {}
+  for (const [id, a] of Object.entries(cur.assets)) if (a && !a.cpfm && a.code) assetIdByCode[a.code] = id
+  for (const r of assetRows) assetIdByCode[clean(r.asset_code)] ||= `cpfm_as${r.asset_id}`
+
   /* ---------- jobs ---------- */
   const counters = {}
   const conflicts = []
-  for (const [siteCode, site] of Object.entries(sites)) {
+  const jobNoById = {} // CPFM task_id → task_code, for the stock card / repair log
+  for (const [siteCode, site] of Object.entries(JOBS ? sites : {})) {
     const rows = []
     for (let start = 0; ; start += 1000) {
       const params = { start, limit: Math.min(1000, LIMIT - rows.length), sort: 'task_id', dir: 'DESC', locationgroup: site.rawCode }
@@ -415,6 +735,7 @@ async function main() {
       const createdAt = tsBkk(r.users_date) || tsBkk(r.task_date) || Date.now()
       const updatedAt = tsBkk(r.users_update) || tsBkk(r.task_status_date) || createdAt
       const jobNo = r.task_code
+      jobNoById[r.task_id] = jobNo
       const y = jobNo.match(/^WO(\d{4})-(\d+)$/)
       if (y) counters[y[1]] = Math.max(counters[y[1]] || 0, Number(y[2]))
       if (ownJobNos.has(jobNo)) conflicts.push(jobNo)
@@ -443,6 +764,14 @@ async function main() {
       const holdNote = clean(lastHold || r.task_remark).slice(0, 1000)
       const hold = status === 'on_hold' ? { reason: holdReason(holdNote), note: holdNote, resumeDate: null, partsEta: null, since: tsBkk(r.task_status_date) || updatedAt } : null
       const email = clean(r.task_by_email)
+      // ผู้ปฏิบัติงาน: task_action_by = staff codes, actionby = the same people's names (both comma separated).
+      // A code missing from the staff list becomes an inactive /staff record.
+      const names = String(r.actionby || '').split(',')
+      const assignees = {}
+      String(r.task_action_by || '').split(',').forEach((c, i) => {
+        const sid = staffMember(c, names[i], false)
+        if (sid) assignees[sid] = (clean(names[i]) || cur.staff[sid]?.name || String(c).trim()).slice(0, 120)
+      })
       const job = {
         jobNo, status, priority: PRIORITY[r.task_priority] || 'normal',
         siteId: where.siteId, buildingId: where.buildingId, areaId: where.areaId,
@@ -451,13 +780,17 @@ async function main() {
         reporterUid: uidByEmail[emailKey(email)] || 'cpfm',
         reporter: { name: clean(r.task_by).slice(0, 120), email: email.slice(0, 160), phone: clean(r.task_by_tel).slice(0, 40), department: clean(r.task_by_dept).slice(0, 120) },
         lang: 'th', pdpaAt: createdAt,
-        assigneeUid: null, assigneeName: clean(r.actionby).slice(0, 120) || null,
+        assignees: Object.keys(assignees).length ? assignees : null, assigneeKeys: assigneeKeyString(assignees),
+        assigneeName: Object.values(assignees).join(', ').slice(0, 300) || null,
+        assigneeUid: null, trackingCode: null, // pre-2026-11-02 fields (one assignee; random tracking code)
         expectedDate: tsBkk(r.duedate), expectedNote: '',
         hold, workDetail: clean(r.task_action).slice(0, 3000),
         createdAt, updatedAt,
         completedAt: status === 'completed' ? tsBkk(r.donetime) || tsBkk(r.task_status_date) || updatedAt : null,
         cpfm: { id: r.task_id, location: (r.task_location || '').trim(), type: r.task_type || '', by: clean(r.users_date_by), rating: r.rate_star ? { star: Number(r.rate_star), comment: clean(r.rate_comment) } : null }
       }
+      const aid = assetIdByCode[clean(r.task_asset)]
+      if (r.task_asset && aid) job.assetId = aid // only when set, so the hash of every other job stays the same
       job.idx = jobIndex(job)
 
       /* attachments: photos → our photo store (later, in parallel); everything else → a link to the old server */
@@ -475,27 +808,45 @@ async function main() {
       }
 
       const h = hash(JSON.stringify([job, evs]), 16)
-      if (prev && prev.cpfm?.hash === h && !FORCE) { stats.jobsSame++; continue }
+      if (prev && prev.cpfm?.hash === h && !FORCE && !prev.trackingCode) { stats.jobsSame++; continue }
       job.cpfm.hash = h
       prev ? stats.jobsChanged++ : stats.jobsNew++
 
-      const code = prev?.trackingCode || randomCode()
-      set(`jobs/${id}`, { ...job, trackingCode: code })
+      set(`jobs/${id}`, job)
+      for (const k of Object.keys(prev?.assignees || {})) if (!assignees[k]) up[`assignments/${k}/${id}`] = null
+      for (const k of Object.keys(assignees)) up[`assignments/${k}/${id}`] = true
+      // the public tracking page is keyed by job number; before 2026-11-02 it was a random code
+      if (prev?.trackingCode) up[`tracking/${prev.trackingCode}`] = null
+      const owner = !ownJobNos.has(jobNo) // an app job already has this number → it keeps the tracking page
       for (const [eid, ev] of Object.entries(evs)) {
         up[`jobEvents/${id}/${eid}`] = ev
-        if (ev.public) up[`tracking/${code}/timeline/${eid}`] = { at: ev.at, type: ev.type, to: ev.to, note: ev.type === 'created' ? '' : ev.note }
+        if (ev.public && owner) up[`tracking/${jobNo}/timeline/${eid}`] = { at: ev.at, type: ev.type, to: ev.to, note: ev.type === 'created' ? '' : ev.note }
         stats.events++
       }
-      set(`tracking/${code}`, {
+      if (owner) set(`tracking/${jobNo}`, {
         jobId: id, jobNo, status, siteId: job.siteId, jobTypeId: job.jobTypeId, buildingId: job.buildingId, areaId: job.areaId,
         createdAt, updatedAt, expectedDate: job.expectedDate, expectedNote: '', hold: hold && { ...hold }
       })
     }
   }
 
-  /* ---------- sort keys for jobs created in the new app (paged job list) ---------- */
+  /* ---------- เครื่องจักรและอุปกรณ์, วัสดุอุปกรณ์, PM ---------- */
+  const jobTypeIdOf = (code) => typeIds[code] || findBy('jobTypes', (v) => v.cpfm?.code === code) ||
+    (TYPE_ALIAS[code] && findBy('jobTypes', (v) => v.nameEn === TYPE_ALIAS[code])) || null
+  await importInventory({ db, cur, up, set, findBy, stats, sites, locByCode, area, assetRows, assetIdByCode, jobNoById, jobTypeIdOf })
+
+  /* ---------- jobs created in the new app: sort keys (paged job list) + pre-2026-11-02 fields ---------- */
   for (const [id, j] of Object.entries(cur.jobs)) {
     if (!j || j.cpfm || typeof j.createdAt !== 'number') continue
+    if (j.trackingCode && db) { // random tracking code → tracking/{jobNo}
+      const t = (await db.ref(`tracking/${j.trackingCode}`).get()).val()
+      if (t) up[`tracking/${j.jobNo}`] = t
+      up[`tracking/${j.trackingCode}`] = null; up[`jobs/${id}/trackingCode`] = null
+    }
+    if (j.assigneeUid) { // one assignee → assignees map
+      const a = { [j.assigneeUid]: (j.assigneeName || '-').slice(0, 120) }
+      Object.assign(up, { [`jobs/${id}/assignees`]: a, [`jobs/${id}/assigneeKeys`]: assigneeKeyString(a), [`jobs/${id}/assigneeUid`]: null, [`assignments/${j.assigneeUid}/${id}`]: true })
+    }
     const idx = jobIndex(j)
     if (JSON.stringify(idx) !== JSON.stringify(j.idx)) { up[`jobs/${id}/idx`] = idx; stats.reindexed++ }
   }
@@ -545,7 +896,7 @@ async function main() {
 
   /* ---------- write ---------- */
   log('\nSummary (new records):', JSON.stringify(stats))
-  if (conflicts.length) log(`⚠ ${conflicts.length} job numbers exist both in CPFM and as jobs created in the new app (kept both): ${conflicts.slice(0, 10).join(', ')}…`)
+  if (conflicts.length) log(`⚠ ${conflicts.length} job numbers exist both in CPFM and as jobs created in the new app (kept both; the app job keeps the tracking page): ${conflicts.slice(0, 10).join(', ')}…`)
   const paths = Object.keys(up)
   if (DRY) {
     const out = join(CACHE, 'dry-run.json')
@@ -560,11 +911,16 @@ async function main() {
     await db.ref().update(part)
     log(`  wrote ${Math.min(i + CHUNK, paths.length)}/${paths.length} paths`)
   }
-  // new-app job numbers continue after the highest imported number of each year
+  // counters/jobs/WO{yyyy} = highest CPFM number, so the app continues after it once /config/public/jobPrefix is "WO"
   for (const [year, n] of Object.entries(counters)) {
-    await db.ref(`counters/jobs/${year}`).transaction((v) => Math.max(v || 0, n))
+    await db.ref(`counters/jobs/WO${year}`).transaction((v) => Math.max(v || 0, n))
+    await db.ref(`counters/jobs/${year}`).remove() // pre-2026-11-02 key
   }
-  await db.ref('config/cpfmImport').set({ at: Date.now(), stats })
+  for (const [year, n] of Object.entries(pmCounters)) await db.ref(`counters/pm/${year}`).transaction((v) => Math.max(v || 0, n))
+  // a full run replaces /config/cpfmImport; a partial one (--only) only its own entry under sections/
+  const run = { at: Date.now(), only: [...ONLY].join(','), stats }
+  if (ONLY.size === 3) await db.ref('config/cpfmImport').set(run)
+  else await db.ref(`config/cpfmImport/sections/${[...ONLY].sort().join('_')}`).set(run)
   log('✔ done')
   process.exit(0)
 }

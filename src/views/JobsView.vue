@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { authState, isTech } from '../stores/auth.js'
+import { isTech, assigneeKeys } from '../stores/auth.js'
 import { listenJobsPage, listenAssignedJobs, findJobs, JOBS_PAGE } from '../services/jobs.js'
 import { activeSites, activeBuildings, buildingsOf, master } from '../stores/master.js'
 import { ln } from '../i18n/index.js'
@@ -43,7 +43,7 @@ watch(paged, (p) => {
   unsubOwn()
   if (p) return
   own.value = null
-  unsubOwn = listenAssignedJobs(authState.user.uid, (j) => (own.value = j), (e) => { toastError(e); own.value = [] })
+  unsubOwn = listenAssignedJobs(assigneeKeys.value, (j) => (own.value = j), (e) => { toastError(e); own.value = [] })
 }, { immediate: true })
 onBeforeUnmount(() => { unsubPage(); unsubOwn() })
 
@@ -61,7 +61,7 @@ const ownFiltered = computed(() => (own.value || []).filter((j) => {
 }))
 
 /* ---------- search ---------- */
-// Enter: exact job number / tracking code over all jobs. Typing: narrows the jobs on screen.
+// Enter: exact job number over all jobs. Typing: narrows the jobs on screen.
 async function search() {
   if (!q.value.trim()) { found.value = null; return }
   try { found.value = await findJobs(q.value) } catch (e) { toastError(e) }
@@ -69,7 +69,7 @@ async function search() {
 const textMatch = (j) => {
   const s = q.value.trim().toLowerCase()
   if (!s) return true
-  const hay = [j.jobNo, j.trackingCode, j.description, j.reporter?.name, j.reporter?.email, j.assigneeName, j.locationDetail, ln(master.jobTypes[j.jobTypeId])].join(' ').toLowerCase()
+  const hay = [j.jobNo, j.description, j.reporter?.name, j.reporter?.email, j.assigneeName, j.locationDetail, ln(master.jobTypes[j.jobTypeId])].join(' ').toLowerCase()
   return hay.includes(s)
 }
 

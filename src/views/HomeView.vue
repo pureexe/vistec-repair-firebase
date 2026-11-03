@@ -1,11 +1,11 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { normalizeCode } from '../services/util.js'
+import { normalizeJobNo } from '../services/util.js'
 const router = useRouter()
 const route = useRoute()
 const code = ref('')
-const track = () => { const c = normalizeCode(code.value); if (c) router.push('/t/' + c) }
+const track = () => { const c = normalizeJobNo(code.value); if (c) router.push('/t/' + c) }
 </script>
 
 <template>
@@ -29,7 +29,7 @@ const track = () => { const c = normalizeCode(code.value); if (c) router.push('/
         <h2 class="title is-5"><i class="mdi mdi-magnify"></i> {{ $t('home.trackTitle') }}</h2>
         <form @submit.prevent="track" class="field has-addons">
           <div class="control is-expanded">
-            <input v-model="code" class="input is-medium tracking-code" style="font-size:1.1rem" :placeholder="$t('home.trackPlaceholder')" maxlength="12" autocapitalize="characters" />
+            <input v-model="code" class="input is-medium tracking-code" style="font-size:1.1rem" :placeholder="$t('home.trackPlaceholder')" maxlength="14" autocapitalize="characters" />
           </div>
           <div class="control"><button class="button is-primary is-medium">{{ $t('track.lookup') }}</button></div>
         </form>

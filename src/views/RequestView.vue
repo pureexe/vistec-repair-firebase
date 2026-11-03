@@ -4,7 +4,8 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ref as dbRef, update } from 'firebase/database'
 import { db } from '../firebase.js'
-import { authState } from '../stores/auth.js'
+import { authState, isTech } from '../stores/auth.js'
+import { inv, startInventory } from '../stores/inventory.js'
 import { master, activeSites, activeBuildings, activeJobTypes, areasOf, buildingsOf } from '../stores/master.js'
 import { ln } from '../i18n/index.js'
 import { getPosition, nearestBuilding, mapUrl } from '../services/geo.js'
@@ -18,7 +19,7 @@ const route = useRoute()
 
 const form = reactive({
   siteId: '', buildingId: '', areaId: '', locationDetail: '', jobTypeId: '', description: '', priority: 'normal',
-  name: '', phone: '', email: '', department: '', gps: null, pdpa: false
+  name: '', phone: '', email: '', department: '', gps: null, pdpa: false, assetId: ''
 })
 const images = ref([])
 const busy = ref(false)
@@ -52,6 +53,7 @@ watch(() => authState.profile, prefillContact, { immediate: true })
 
 function applyQuery() {
   if (!master.loaded) return
+  if (route.query.asset && isTech.value) { form.assetId = String(route.query.asset); startInventory() }
   const s = route.query.s && activeSites.value.find((x) => x.id === route.query.s || x.code === route.query.s)
   if (s) { form.siteId = s.id; fromQr.value = ln(s) }
   const b = route.query.b
@@ -114,10 +116,10 @@ async function submit() {
 }
 
 function reset() {
-  Object.assign(form, { areaId: '', locationDetail: '', jobTypeId: '', description: '', priority: 'normal', pdpa: false })
+  Object.assign(form, { areaId: '', locationDetail: '', jobTypeId: '', description: '', priority: 'normal', pdpa: false, assetId: '' })
   images.value = []; done.value = null
 }
-const trackUrl = computed(() => done.value ? `${location.origin}/t/${done.value.trackingCode}` : '')
+const trackUrl = computed(() => done.value ? `${location.origin}/t/${done.value.jobNo}` : '')
 async function copy() { try { await navigator.clipboard.writeText(trackUrl.value); copied.value = true; setTimeout(() => (copied.value = false), 2000) } catch {} }
 </script>
 
@@ -129,11 +131,10 @@ async function copy() { try { await navigator.clipboard.writeText(trackUrl.value
         <span class="icon is-large has-text-success"><i class="mdi mdi-check-circle mdi-48px"></i></span>
         <h1 class="title is-4 mt-3">{{ $t('request.successTitle') }}</h1>
         <p class="mb-4">{{ $t('request.successText') }}</p>
-        <p class="is-size-7 has-text-grey">{{ $t('request.trackingCode') }}</p>
-        <p class="tracking-code mb-2">{{ done.trackingCode }}</p>
-        <p class="is-size-7 has-text-grey mb-4">{{ $t('request.jobNo') }}: {{ done.jobNo }}</p>
+        <p class="is-size-7 has-text-grey">{{ $t('request.jobNo') }}</p>
+        <p class="tracking-code mb-4">{{ done.jobNo }}</p>
         <div class="buttons is-centered is-stacked-mobile">
-          <router-link :to="'/t/' + done.trackingCode" class="button is-primary"><span class="icon"><i class="mdi mdi-magnify"></i></span><span>{{ $t('request.openTracking') }}</span></router-link>
+          <router-link :to="'/t/' + done.jobNo" class="button is-primary"><span class="icon"><i class="mdi mdi-magnify"></i></span><span>{{ $t('request.openTracking') }}</span></router-link>
           <button class="button" @click="copy"><span class="icon"><i class="mdi mdi-content-copy"></i></span><span>{{ copied ? $t('common.copied') : $t('track.share') }}</span></button>
           <button class="button is-light" @click="reset">{{ $t('request.another') }}</button>
         </div>
@@ -145,6 +146,8 @@ async function copy() { try { await navigator.clipboard.writeText(trackUrl.value
         <div class="accent-bar mb-4"></div>
 
         <div v-if="fromQr" class="notification is-primary is-light py-2"><i class="mdi mdi-qrcode"></i> {{ $t('request.fromQr', { name: fromQr }) }}</div>
+        <div v-if="form.assetId" class="notification is-primary is-light py-2"><i class="mdi mdi-cog"></i> {{ $t('request.forAsset', { name: inv.assets[form.assetId] ? inv.assets[form.assetId].code + ' ' + inv.assets[form.assetId].name : form.assetId }) }}
+          <button class="delete" type="button" @click="form.assetId = ''"></button></div>
 
         <!-- GPS -->
         <div class="field">

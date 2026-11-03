@@ -2,7 +2,8 @@
 
 The client's current repair system is **CPFM "Building Intelligent"** at `EXISTING_SYSTEM_URL`
 (`https://enco.bi-cpfm.com/`). It is still in daily use. `scripts/import-cpfm.mjs` (`npm run import:cpfm`)
-copies its jobs and master data into our Realtime Database. **The old system wins**: every run overwrites the
+copies its jobs, machines & equipment, spare parts (stock card), repair logs, PM plans and master data into our
+Realtime Database. **The old system wins**: every run overwrites the
 imported fields with what CPFM shows now. Read this before you touch the importer or the old site.
 
 ## Ground rules for agents
@@ -26,7 +27,11 @@ imported fields with what CPFM shows now. Read this before you touch the importe
 npm run import:cpfm -- --dry-run          # scrape everything, write nothing
 npm run import:cpfm                       # scrape + write (refuses if the DB is publicly readable)
 npm run import:cpfm -- --site=VISTEC --from=2026-10-01 --no-notes
+npm run import:cpfm -- --only=assets,pm --yes   # only assets, materials, stock card, PM: a few minutes, no Storage uploads
 ```
+
+`--only=jobs,assets,pm` picks the sections (default all three). Sites, buildings, areas, job types and staff are always
+refreshed because the other sections point at them.
 
 Flags are documented at the top of the script. A full run fetches ≈25.5k jobs (26 pages), then **two requests per
 job**: the activity log and the attachment list. Both are cached in `.cpfm-cache/{notes,docs}/{task_id}.json` and
@@ -60,6 +65,25 @@ before `JSON.parse` (see `parseLoose`). Strings are `\uXXXX`-escaped Thai.
 | Statuses | `option/action.php?act=statuslist&status_type=tasks` | jobs use `status_code`: 1 new · 2 in progress · 3 on hold · 4 done · 5 cancelled |
 | Staff | `…settypelist&type_category=taskstaffen&order_by=type_code&authen_comment=y` | not needed: the job grid already gives `actionby` names |
 
+**Assets, materials, PM** (all read-only grids, `act=grid…` / `listassets…` / `settypelist`; never `act=save`, `copy`,
+`genschedule`, `copyschedule`, `statusschedule`, `runnerplan`):
+
+| What | Request | Notes |
+|---|---|---|
+| Machines & equipment (~384) | `assets/assets_action.php?menu=asset-list&row_type=&row_id=&assetlocation=&assettype=assettype&asset_category=assets&authen_location=y&act=gridassets&status_type=assets` body `start, limit` | real JSON. `asset_location` = location code, `assetlocation` = "site > area", `asset_type` = sub-category code, `asset_brand` = brand code, `asset_status` 1–4. `asset_unit` often holds a location code by mistake (dropped). Pages open only with `?menu=<code>` (e.g. `assets/assets_list.php?menu=asset-list`), otherwise *session-expired* |
+| Repair log of one asset | `assets/assets_action.php?menu=asset-list&row_type=assets&row_id={asset_id}&asset_location=&act=grid&asset_code={code}&asset_category=repair&status_type=tasks` | one request per asset; filtered by `asset_code`, an empty code returns nothing. Rows are `asset_category=repair` with `asset_action` (PM/REPAIR/CHANGE/TRANSFER/INSTALL), `asset_price` = cost, `asset_min` = breakdown time, `row_type=tasks`, `row_id` = task_id, `task_code` |
+| Materials / spare parts (~71) | same with `menu=asset-equipt…asset_category=equipt&act=gridequipt` | `stock` = on-hand (sum of the stock card), `asset_min`/`asset_max` |
+| Stock card (all items, ~835) | `stocks/stocks_action.php?menu=asset-equipt&stk_category=equipt&stk_location=&stk_code=&act=grid&status_type=stocks` | `stk_type` in/out, `stock` = signed qty, `stk_code` = item code, `row_type=tasks` + `row_id` = the job it was issued to. **~140 codes, but only 71 items exist**: the rest were deleted in CPFM and survive only here |
+| Asset categories | `settypelist&type_category=assettype&type_parent=0` (8 groups) / `type_parent=sub` (50 types, `type_parent` = group code) | |
+| Brands | `settypelist&type_category=assetbrand&partial=y` | code → name |
+| Check lists | `settypelist&type_category=asset-checklist&type_parent=0` (templates, e.g. `PM-Air` "ฟอร์ม Air SplitType") / `type_parent=sub&partial=y` (items) | items: `type_parent` = the template *name* without "ฟอร์ม " ("Air SplitType"), `type_name` = `select\|ปกติ,ไม่ปกติ`, `type_color` = the item label |
+| Asset statuses | `statuslist&status_type=assets` | 1 ปกติ · 2 ซ่อมแซม · 3 Write-Off · 4 หมดอายุ |
+| PM plans (8 by Nov 2026) | `pm/pm_action.php?menu=pm-list&row_type=PM&authen_location=y&act=grid&status_type=preventive&mode=` | `sched_repeat` MINUTE…YEAR, `sched_freq_value` = every N, `sched_remind(_value)`, `sched_status` 1/0, `sched_location`, `locationgroup` = site name |
+| Machines in a plan | `assets/assets_action.php?act=listassetspm&asset_pm=PM` body `sched_id` | |
+| Plan calendar | `pm/pm_action.php?menu=pm-list&row_type=pm&row_id={sched_id}&act=gridschedule` | one row per month, `sch_date` = comma-separated datetimes, `task_code` = the WO made for it (none so far) |
+| Attachments / comments | `document_action.php…row_type=assetslist\|equipt\|pm`, `note_action.php` with the same `row_type` | none on assets or materials by Nov 2026; PM plans have "Add new PM Code" notes |
+| Expenses (ค่าใช้จ่าย) | `payments/payments_action.php?act=grid&…&pay_form=paid` | **1 row in the whole system (2021 test)** — not imported |
+
 Useful job-grid columns: `task_id, task_code (WO2026-2598), task_status, task_priority, task_location (area code),
 location ("site > area" name), task_type, typename, task_detail, task_action (work done), task_remark (hold note),
 task_by / _tel / _email / _dept, actionby (assignee names, comma separated), task_action_by (staff codes), users_date
@@ -78,18 +102,46 @@ Activity-log `note_status` values: `แจ้งงานใหม่` (created)
 | area "อาคาร R1.1 ชั้น2" | `/buildings` "อาคาร R1.1" + `/areas` "ชั้น 2" | `cpfm_b_{sha1(site\|building)}`, `cpfm_a_{…}`. Matched on `cpfm.key` |
 | area without a floor / the site itself / unknown code | building only, or the site-wide building (the building whose `code` = site code, e.g. the seeded "VISTEC" one) | |
 | tasktype | `/jobTypes`. Reuses the seeded type with the matching `nameEn` (`TYPE_ALIAS`) | `cpfm.code` |
-| task | `/jobs/cpfm_{task_id}` + `/tracking/{code}` + `/jobEvents/cpfm_{task_id}/cpfm_{note_id}` | `trackingCode` is random once, then kept |
+| task | `/jobs/cpfm_{task_id}` + `/tracking/{task_code}` + `/jobEvents/cpfm_{task_id}/cpfm_{note_id}` | the CPFM number (WO2026-2557) is the tracking id |
+| taskstaffen (staff) | `/staff/cpfm_s{code}` | name/code/active from CPFM; `email`, `uid`, `company` set in the app are kept |
 
 - Status 1→`new`, 2→`in_progress`, 3→`on_hold` (reason guessed from the note text), 4→`completed`, 5→`cancelled`.
 - `reporterUid` = the uid of a `/users` entry with the same e-mail, or `"cpfm"`. Re-runs pick up people who signed up
   later, so their old jobs appear under "My jobs".
-- `assigneeUid` stays empty (CPFM staff have no accounts here). `assigneeName` = CPFM names.
+- `assignees` = the job's `task_action_by` staff codes → `/staff/cpfm_s{code}` (+ `/assignments`). A staff record
+  linked to an account (Users page) makes those jobs that person's. An unknown code becomes an inactive staff record.
 - Imported events carry `imported: true` and `byUid: "cpfm"`. **`functions/index.js` skips them**, so no e-mails.
   Keep that guard if you touch `onJobEvent`.
 - Fields only the new app writes (photos, gps, events with push ids) are never touched. CPFM deletions are not mirrored.
-- `counters/jobs/{year}` is raised to the highest imported number. CPFM and the new app share one `WO{yyyy}-{n}`
-  space, so while both run, the same number can exist twice. The importer warns about that and keeps both.
-- The last run's stats are in `/config/cpfmImport`.
+- `counters/jobs/WO{yyyy}` is raised to the highest imported number. While CPFM runs the app numbers its jobs
+  `VR{yyyy}-{n}` (`/config/public/jobPrefix`), so numbers never collide. At the switch-over set the prefix to `WO`
+  and the app continues after CPFM's last number. If an app job ever has a CPFM number, the importer warns and the
+  app job keeps the tracking page.
+- Jobs imported before 2026-11-02 had a random `trackingCode` and one `assigneeUid`; the next run moves them to
+  `tracking/{jobNo}` and `assignees` (every job counts as changed once).
+- The last full run's stats are in `/config/cpfmImport`; an `--only` run writes `/config/cpfmImport/sections/{names}`.
+
+### Assets, materials, stock card, PM plans
+
+| CPFM | Ours | Key |
+|---|---|---|
+| assettype group / type | `/assetTypes` (`parentId` = group) | `cpfm_at_{code}` |
+| asset-checklist + items | `/checklists/{id}/items` | `cpfm_cl_{code}` |
+| asset (asset_category=assets) | `/assets` (+ `files`, `history` from attachments / comments) | `cpfm_as{asset_id}` |
+| repair rows (asset_category=repair) | `/assetLogs` (`jobId` = `cpfm_{row_id}` when that job is in our DB) | `cpfm_al{asset_id}` |
+| equipt item | `/materials` | `cpfm_m{asset_id}` |
+| stock card code with no item | `/materials`, `active: false`, `cpfm.stockCardOnly` | `cpfm_mc_{sha1(code)}` |
+| stocks row | `/stockMoves` (`delta` = signed qty, `jobId` as above) | `cpfm_sk{stk_id}` |
+| PM plan (set_schedule) | `/pmPlans` (`assets` from listassetspm, `jobs/{due}` from the calendar's `task_code`) | `cpfm_pm{sched_id}` |
+
+- `materials/*/onHand` = CPFM's stock lines + lines entered in the new app. The run warns when CPFM's own `stock` column
+  doesn't match the sum of its stock card.
+- Stock lines and repair-log lines deleted in CPFM are deleted here too (only `cpfm_…` ids, and not with `--site`).
+- Location: the record's CPFM location code (same table as jobs), else its "site > area" name.
+- PM due dates are not copied: the app computes them from the repeat rule. The run compares them with CPFM's
+  `gridschedule` dates and warns when they differ (PM2021-0001, a 2021 test plan, does).
+- `counters/pm/{yyyy}` is raised to the highest CPFM PM number, so new plans continue after it.
+- A job's `task_asset` (always empty so far) sets `jobs/*/assetId` when it matches an asset code.
 
 ### Attachments
 - Photos (jpg/png/webp/gif/tiff/bmp/heic) are downloaded once, shrunk like `src/services/images.js` does
@@ -108,4 +160,5 @@ Activity-log `note_status` values: `แจ้งงานใหม่` (created)
 - With `--photos=rtdb`, ~11k photos × ~40 KB base64 ≈ 450 MB of RTDB. That's workable but heavy on the Spark plan (1 GB), so prefer Storage.
 
 ## Not imported yet (ideas)
-Satisfaction ratings beyond `cpfm.rating`, materials / expenses / repair-log tabs, assets, PM plans, attachments on notes (none seen).
+Satisfaction ratings beyond `cpfm.rating`, the expenses tab (1 test row in all of CPFM), meter readings, attachments on
+notes (none seen), check-list *results* (CPFM stores none: no PM work orders were ever generated).

@@ -45,6 +45,20 @@ const userName = computed(() => authState.profile?.displayName || authState.user
           <router-link v-if="isStaff" class="navbar-item" to="/jobs">{{ t('nav.jobs') }}</router-link>
           <router-link v-if="isTech" class="navbar-item" to="/dashboard">{{ t('nav.dashboard') }}</router-link>
           <div v-if="isTech" class="navbar-item has-dropdown is-hoverable">
+            <a class="navbar-link">{{ t('nav.pm') }}</a>
+            <div class="navbar-dropdown">
+              <router-link class="navbar-item" to="/pm">{{ t('nav.pmList') }}</router-link>
+              <router-link class="navbar-item" to="/pm/calendar">{{ t('nav.pmCalendar') }}</router-link>
+            </div>
+          </div>
+          <div v-if="isTech" class="navbar-item has-dropdown is-hoverable">
+            <a class="navbar-link">{{ t('nav.assets') }}</a>
+            <div class="navbar-dropdown">
+              <router-link class="navbar-item" to="/assets">{{ t('nav.assetList') }}</router-link>
+              <router-link class="navbar-item" to="/materials">{{ t('nav.materials') }}</router-link>
+            </div>
+          </div>
+          <div v-if="isTech" class="navbar-item has-dropdown is-hoverable">
             <a class="navbar-link">{{ t('nav.admin') }}</a>
             <div class="navbar-dropdown">
               <router-link v-if="isAdmin" class="navbar-item" to="/admin/master">{{ t('nav.master') }}</router-link>

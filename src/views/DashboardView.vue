@@ -36,7 +36,10 @@ const stats = computed(() => {
 
 function groupBy(fn, labelFn) {
   const m = {}
-  for (const j of jobs.value) { const k = fn(j) || '-'; m[k] = (m[k] || 0) + 1 }
+  for (const j of jobs.value) {
+    const ks = [].concat(fn(j) ?? []).filter(Boolean) // a job can count under several keys (e.g. assignees)
+    for (const k of ks.length ? ks : ['-']) m[k] = (m[k] || 0) + 1
+  }
   const rows = Object.entries(m).map(([k, v]) => ({ k, label: labelFn(k), v })).sort((a, b) => b.v - a.v)
   const max = Math.max(1, ...rows.map((r) => r.v))
   return rows.map((r) => ({ ...r, pct: (r.v / max) * 100 }))
@@ -44,7 +47,7 @@ function groupBy(fn, labelFn) {
 const byStatus = computed(() => STATUSES.map((s) => ({ s, v: jobs.value.filter((j) => j.status === s).length })))
 const byType = computed(() => groupBy((j) => j.jobTypeId, (k) => ln(master.jobTypes[k]) || '-').slice(0, 10))
 const byBuilding = computed(() => groupBy((j) => j.buildingId, (k) => ln(master.buildings[k]) || '-').slice(0, 10))
-const byAssignee = computed(() => groupBy((j) => j.assigneeName, (k) => (k === '-' ? t('jobs.unassigned') : k)).slice(0, 10))
+const byAssignee = computed(() => groupBy((j) => Object.values(j.assignees || {}), (k) => (k === '-' ? t('jobs.unassigned') : k)).slice(0, 10))
 const byMonth = computed(() => {
   const rows = []
   for (let i = 11; i >= 0; i--) {

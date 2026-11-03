@@ -8,6 +8,7 @@ function title(e) {
     case 'created': return t('event.created')
     case 'status': return t('event.status', { to: t('status.' + e.to) })
     case 'assign': return t('event.assign', { to: e.to })
+    case 'unassign': return t('event.unassign', { from: e.from })
     case 'hold': return t('event.hold', { to: t('hold.' + (e.to || 'other')) })
     case 'expected': return t('event.expected') + (e.to ? ': ' + fmtDate(Number(e.to), false) : ' -')
     case 'photo': return t('event.photo')

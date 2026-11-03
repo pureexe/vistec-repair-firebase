@@ -36,7 +36,7 @@ const T = {
     hold: { waiting_parts: 'รออะไหล่ / วัสดุ', budget: 'รออนุมัติงบประมาณ / เลื่อนรอบการเงิน', contractor: 'รอผู้รับเหมา / บริษัทภายนอก', access: 'รอเข้าพื้นที่ / นัดหมาย', other: 'อื่น ๆ' },
     created: 'ได้รับแจ้งซ่อมของคุณแล้ว', statusChanged: 'สถานะงานเปลี่ยนเป็น', assigned: 'มอบหมายผู้ปฏิบัติงาน', onHold: 'งานหยุดชั่วคราว',
     expected: 'วันที่คาดว่าจะเสร็จ', comment: 'ข้อความจากเจ้าหน้าที่', partsEta: 'คาดว่าอะไหล่จะมาถึง', resume: 'คาดว่าจะดำเนินการต่อ',
-    track: 'ติดตามสถานะงาน', code: 'เลขติดตามงาน', jobNo: 'เลขที่งาน', footer: 'อีเมลนี้ส่งอัตโนมัติจากระบบแจ้งซ่อม VISTEC กรุณาอย่าตอบกลับ',
+    track: 'ติดตามสถานะงาน', jobNo: 'เลขที่งาน', footer: 'อีเมลนี้ส่งอัตโนมัติจากระบบแจ้งซ่อม VISTEC กรุณาอย่าตอบกลับ',
     newJobStaff: 'มีงานแจ้งซ่อมใหม่', assignedToYou: 'มีงานมอบหมายให้คุณ', reporterComment: 'ผู้แจ้งเพิ่มความเห็น', locale: 'th-TH'
   },
   en: {
@@ -44,7 +44,7 @@ const T = {
     hold: { waiting_parts: 'Waiting for parts / materials', budget: 'Waiting for budget / next finance cycle', contractor: 'Waiting for contractor / vendor', access: 'Waiting for access / appointment', other: 'Other' },
     created: 'We received your repair request', statusChanged: 'Status changed to', assigned: 'Technician assigned', onHold: 'Job on hold',
     expected: 'Expected completion', comment: 'Message from staff', partsEta: 'Parts expected on', resume: 'Expected to resume on',
-    track: 'Track this job', code: 'Tracking code', jobNo: 'Job no.', footer: 'Automatic e-mail from the VISTEC repair system — please do not reply.',
+    track: 'Track this job', jobNo: 'Job no.', footer: 'Automatic e-mail from the VISTEC repair system — please do not reply.',
     newJobStaff: 'New repair request', assignedToYou: 'A job was assigned to you', reporterComment: 'Reporter added a comment', locale: 'en-GB'
   }
 }
@@ -64,7 +64,7 @@ function headline(ev, job, L) {
 }
 
 function body(ev, job, L, title) {
-  const link = `${APP_URL.value()}/t/${job.trackingCode}`
+  const link = `${APP_URL.value()}/t/${job.jobNo}`
   const rows = []
   if (ev.note) rows.push(`<p style="white-space:pre-line;background:#f6f3fa;padding:12px;border-radius:8px">${esc(ev.note)}</p>`)
   if (job.status === 'on_hold' && job.hold) {
@@ -76,7 +76,7 @@ function body(ev, job, L, title) {
   <div style="background:linear-gradient(90deg,#582E91,#A0223A);color:#fff;padding:16px 20px;font-size:18px;font-weight:bold">VISTEC Repair · แจ้งซ่อม</div>
   <div style="padding:20px">
     <h2 style="color:#582E91;margin:0 0 8px">${esc(title)}</h2>
-    <p style="color:#666;margin:0 0 12px">${L.jobNo}: <b>${esc(job.jobNo)}</b> · ${L.code}: <b style="letter-spacing:2px">${esc(job.trackingCode)}</b></p>
+    <p style="color:#666;margin:0 0 12px">${L.jobNo}: <b style="letter-spacing:1px">${esc(job.jobNo)}</b></p>
     <p style="margin:0 0 12px;color:#333">${esc(String(job.description || '').slice(0, 300))}</p>
     ${rows.join('\n')}
     <p style="margin:20px 0"><a href="${link}" style="background:#582E91;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">${L.track}</a></p>
@@ -128,13 +128,16 @@ export const onJobEvent = onValueCreated(
       const staff = STAFF_NOTIFY_EMAILS.value().split(',').map((s) => s.trim()).filter(Boolean)
       if (staff.length) await send({ to: staff, subject: `[${job.jobNo}] ${T.th.newJobStaff} / ${T.en.newJobStaff}`, html: body({ note: `${job.reporter?.name} · ${job.reporter?.phone}` }, job, T.th, T.th.newJobStaff), jobId, eventId })
     }
-    // 3) assignee — assignment, or reporter commented
-    if ((ev.type === 'assign' || (fromReporter && ev.type === 'comment')) && job.assigneeUid) {
-      const email = (await db.ref(`users/${job.assigneeUid}/email`).get()).val()
-      const lang = (await db.ref(`users/${job.assigneeUid}/lang`).get()).val()
-      const LA = T[lang] || T.th
+    // 3) ผู้ปฏิบัติงาน — the person just added, or everyone on the job when the reporter commented.
+    //    A key is a /staff id (→ its linked uid; none yet = no mail) or a uid.
+    const keys = ev.type === 'assign' ? [ev.key] : fromReporter && ev.type === 'comment' ? Object.keys(job.assignees || {}) : []
+    for (const key of keys.filter(Boolean)) {
+      const uid = (await db.ref(`staff/${key}/uid`).get()).val() || key
+      const u = (await db.ref(`users/${uid}`).get()).val()
+      if (!u?.email) continue
+      const LA = T[u.lang] || T.th
       const title = ev.type === 'assign' ? LA.assignedToYou : LA.reporterComment
-      if (email) await send({ to: email, subject: `[${job.jobNo}] ${title}`, html: body(ev, job, LA, title).replace(`/t/${job.trackingCode}`, `/jobs/${jobId}`), jobId, eventId })
+      await send({ to: u.email, subject: `[${job.jobNo}] ${title}`, html: body(ev, job, LA, title).replace(`/t/${job.jobNo}`, `/jobs/${jobId}`), jobId, eventId })
     }
   }
 )

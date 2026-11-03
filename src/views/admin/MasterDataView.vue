@@ -6,28 +6,35 @@ import { saveItem, deleteItem, seedDefaults } from '../../services/master.js'
 import { getPosition } from '../../services/geo.js'
 import { ln } from '../../i18n/index.js'
 import { toast, toastError } from '../../stores/toast.js'
+import { inv, startInventory, assetTypeList, assetGroups } from '../../stores/inventory.js'
 
 const { t } = useI18n()
 const tab = ref('buildings')
 const sSel = ref('') // site filter for buildings / areas
 const bSel = ref('')
 const editing = ref(null) // { coll, id, data }
+startInventory()
 
 const fields = {
   sites: ['code', 'nameTh', 'nameEn', 'order', 'active'],
   buildings: ['siteId', 'code', 'nameTh', 'nameEn', 'lat', 'lng', 'order', 'active'],
   areas: ['nameTh', 'nameEn', 'order', 'active'],
-  jobTypes: ['nameTh', 'nameEn', 'icon', 'order', 'active']
+  jobTypes: ['nameTh', 'nameEn', 'icon', 'order', 'active'],
+  // เครื่องจักร / วัสดุ categories: a group (ระบบงาน, no parent) → types
+  assetTypes: ['parentId', 'code', 'nameTh', 'nameEn', 'order', 'active']
 }
-const label = (f) => ({ siteId: t('master.site'), code: t('master.code'), nameTh: t('common.nameTh'), nameEn: t('common.nameEn'), lat: t('master.lat'), lng: t('master.lng'), order: t('common.order'), active: t('common.active'), icon: t('master.icon') }[f])
+const label = (f) => ({ siteId: t('master.site'), code: t('master.code'), nameTh: t('common.nameTh'), nameEn: t('common.nameEn'), lat: t('master.lat'), lng: t('master.lng'), order: t('common.order'), active: t('common.active'), icon: t('master.icon'), parentId: t('asset.group') }[f])
 
 const rows = computed(() => ({
   sites: () => siteList.value,
   buildings: () => buildingsOf(sSel.value),
   jobTypes: () => jobTypeList.value,
+  // each group followed by its types
+  assetTypes: () => assetGroups.value.flatMap((g) => [g, ...assetTypeList.value.filter((x) => x.parentId === g.id)])
+    .concat(assetTypeList.value.filter((x) => x.parentId && !inv.assetTypes[x.parentId])),
   areas: () => (bSel.value ? areasOf(bSel.value) : [])
 }[tab.value]()))
-const cell = (r, f) => (f === 'siteId' ? ln(master.sites[r.siteId]) : r[f])
+const cell = (r, f) => (f === 'siteId' ? ln(master.sites[r.siteId]) : f === 'parentId' ? ln(inv.assetTypes[r.parentId]) : r[f])
 
 function edit(row) {
   const d = {}
@@ -39,6 +46,7 @@ async function save() {
   const d = { ...e.data }
   for (const k of ['lat', 'lng', 'order']) if (k in d) d[k] = d[k] === '' || d[k] === null ? null : Number(d[k])
   if ('siteId' in d) d.siteId = d.siteId || null
+  if ('parentId' in d) d.parentId = d.parentId || null
   if (e.coll === 'areas') d.buildingId = bSel.value
   if (!d.nameTh) return toast(t('err.required'), 'is-warning')
   try { await saveItem(e.coll, e.id, d); editing.value = null; toast(t('common.saved')) } catch (err) { toastError(err) }
@@ -65,7 +73,7 @@ async function seed() {
       </div>
       <div class="tabs is-boxed">
         <ul>
-          <li v-for="k in ['sites', 'buildings', 'areas', 'jobTypes']" :key="k" :class="{ 'is-active': tab === k }"><a @click="tab = k; editing = null">{{ $t('master.' + k) }}</a></li>
+          <li v-for="k in ['sites', 'buildings', 'areas', 'jobTypes', 'assetTypes']" :key="k" :class="{ 'is-active': tab === k }"><a @click="tab = k; editing = null">{{ $t('master.' + k) }}</a></li>
         </ul>
       </div>
 
@@ -92,6 +100,10 @@ async function seed() {
               <div v-if="f === 'siteId'" class="select is-small is-fullwidth"><select v-model="editing.data.siteId">
                 <option value="">-</option>
                 <option v-for="s in siteList" :key="s.id" :value="s.id">{{ ln(s) }}</option>
+              </select></div>
+              <div v-else-if="f === 'parentId'" class="select is-small is-fullwidth"><select v-model="editing.data.parentId">
+                <option value="">- ({{ $t('master.isGroup') }})</option>
+                <option v-for="g in assetGroups.filter((g) => g.id !== editing.id)" :key="g.id" :value="g.id">{{ ln(g) }}</option>
               </select></div>
               <label v-else-if="f === 'active'" class="checkbox"><input type="checkbox" v-model="editing.data.active" /> {{ $t('common.active') }}</label>
               <input v-else class="input is-small" v-model="editing.data[f]" :type="['lat', 'lng', 'order'].includes(f) ? 'number' : 'text'" step="any" />

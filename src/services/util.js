@@ -1,11 +1,17 @@
 export const emailKey = (email) => String(email || '').trim().toLowerCase().replace(/\./g, ',')
 
-const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
-export function randomCode(len = 8) {
-  const a = new Uint32Array(len); crypto.getRandomValues(a)
-  return Array.from(a, (x) => ALPHA[x % ALPHA.length]).join('')
+// Job numbers are the tracking id: "VR2026-0001". CPFM's are "WO…"; app jobs use /config/public/jobPrefix (default VR)
+export const JOB_PREFIX = 'VR'
+/** "vr2026 12", "VR2026-0012" → "VR2026-0012"; not a job number → '' */
+export function normalizeJobNo(s) {
+  const m = String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').match(/^([A-Z]{2})(20\d\d)(\d{1,6})$/)
+  return m ? `${m[1]}${m[2]}-${m[3].padStart(4, '0')}` : ''
 }
-export const normalizeCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+/** Assignee keys as one string ",k1,k2," so the DB rules can test membership with contains() */
+export const assigneeKeyString = (assignees) => {
+  const k = Object.keys(assignees || {})
+  return k.length ? `,${k.join(',')},` : null
+}
 
 export const STATUSES = ['new', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled']
 export const OPEN_STATUSES = ['new', 'assigned', 'in_progress', 'on_hold']

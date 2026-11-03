@@ -3,9 +3,14 @@
 Repair-request and tracking system for VISTEC, built with **Vue 3 + Vite + Bulma** on **Firebase**
 (Realtime Database, Authentication, Storage, Cloud Functions, Hosting). The UI is Thai by default, with English available.
 
-- Reporters sign in (VISTEC Microsoft / Google / e-mail), report a problem from their phone (GPS fills in the location, photos are shrunk to WebP), and get a **tracking code** plus e-mails on every status change.
+- Reporters sign in (VISTEC Microsoft / Google / e-mail), report a problem from their phone (GPS fills in the location, photos are shrunk to WebP), and get a **job number** (also the tracking id, e.g. `VR2026-0001`) plus e-mails on every status change.
 - Staff and contractors work the job: assign, start, put on hold (waiting for parts with an ETA, budget/finance delay with a resume date, …), set an expected finish date, comment, and close it.
 - Admins manage buildings, areas, job types, users, roles and contractor invites, and print QR codes for each building or room.
+- **การบำรุงรักษา (PM):** maintenance plans that repeat (every N days / weeks / months …) with their machines and tasks,
+  a PM calendar, and one-click work orders for each due date ("Gen. Job ถึง" makes them for a date range).
+- **เครื่องจักรและอุปกรณ์:** the machine & equipment register (category, location, brand / model / serial, warranty,
+  status, check list) with a repair / maintenance log, and the spare-parts list with min / max, on-hand, reorder
+  suggestion and a stock card (stock in, issue to a job). Jobs can name the machine they are for.
 
 See `DB.md` (data design), `TODO.md` (progress) and `AGENTS.md` (hand-off guide).
 
@@ -50,6 +55,7 @@ CPFM values overwrite ours, and data that only exists here (photos, new jobs) is
    npm run import:cpfm -- --dry-run     # check first: writes .cpfm-cache/dry-run.json only
    npm run import:cpfm                  # all 4 sites, ~25k jobs + photos; first run ≈8 h, later runs minutes
    npm run import:cpfm -- --photos=link # if Storage is not enabled yet: keep attachments as links to the old server
+   npm run import:cpfm -- --only=assets,pm --yes   # only machines, spare parts + stock card, PM plans (a few minutes)
    ```
 
 ## 2. E-mail notifications (Cloud Functions, Blaze plan)
@@ -79,7 +85,7 @@ firebase deploy --only hosting     # or: database,storage,hosting,functions
 
 ## 4. Test the database rules
 
-The rules come with an emulator test suite (40 cases covering who can read and write what). It needs Java 11+.
+The rules come with an emulator test suite (117 cases covering who can read and write what). It needs Java 11+.
 
 ```bash
 cd tests && npm install && npm test
@@ -91,5 +97,5 @@ cd tests && npm install && npm test
 |---|---|
 | ผู้แจ้ง `user` | Report a problem, see and comment on their own jobs |
 | ผู้รับเหมา `contractor` | See and update only the jobs assigned to them (invite-only; sign in with an e-mail link) |
-| ช่าง `technician` | See and work all jobs, view the dashboard, print QR codes |
-| ผู้ดูแล `admin` | Everything above, plus master data, users and invites |
+| ช่าง `technician` | See and work all jobs, view the dashboard, print QR codes, manage machines, spare parts / stock and PM plans |
+| ผู้ดูแล `admin` | Everything above, plus master data (incl. asset categories), users and invites; delete records and stock lines |

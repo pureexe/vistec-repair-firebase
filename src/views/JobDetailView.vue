@@ -4,11 +4,11 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ref as dbRef, update } from 'firebase/database'
 import { db } from '../firebase.js'
-import { authState, isTech } from '../stores/auth.js'
+import { authState, isTech, assigneeKeys } from '../stores/auth.js'
 import { master, placeName } from '../stores/master.js'
 import { ln, fmtDate, toDateInput, fromDateInput } from '../i18n/index.js'
 import {
-  listenJob, listenEvents, changeStatus, putOnHold, assignJob, setExpected, addComment, addPhotos,
+  listenJob, listenEvents, changeStatus, putOnHold, addAssignee, removeAssignee, setExpected, addComment, addPhotos,
   applyJobChange, actorOf, listAssignableStaff
 } from '../services/jobs.js'
 import { deleteJobPhotoBlob } from '../services/images.js'
@@ -21,6 +21,8 @@ import HoldBanner from '../components/HoldBanner.vue'
 import Timeline from '../components/Timeline.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PhotoPicker from '../components/PhotoPicker.vue'
+import { inv, startInventory, assetList, materialList } from '../stores/inventory.js'
+import { listenBy, addStockMove, addAssetLog, ASSET_ACTIONS } from '../services/inventory.js'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -40,22 +42,30 @@ const newPhotos = ref([])
 const id = route.params.id
 const u1 = listenJob(id, (j) => (job.value = j), (e) => { toastError(e); job.value = null })
 const u2 = listenEvents(id, (e) => (events.value = e.reverse()), () => {})
-onBeforeUnmount(() => { u1(); u2() })
-if (isTech.value) listAssignableStaff().then((s) => (staff.value = s)).catch(() => {})
+const used = ref([]) // stock moves (materials issued to this job)
+const repairs = ref([]) // asset log lines written from this job
+let u3 = () => {}, u4 = () => {}
+if (isTech.value) {
+  listAssignableStaff().then((s) => (staff.value = s)).catch(() => {})
+  startInventory()
+  u3 = listenBy('stockMoves', 'jobId', id, (m) => (used.value = m))
+  u4 = listenBy('assetLogs', 'jobId', id, (l) => (repairs.value = l))
+}
+onBeforeUnmount(() => { u1(); u2(); u3(); u4() })
 
 watch(job, (j) => {
   if (!j) return
   if (!panel.value) {
     expForm.date = toDateInput(j.expectedDate); expForm.note = j.expectedNote || ''
     workDetail.value = j.workDetail || ''
-    assignee.value = j.assigneeUid || ''
     if (j.hold) Object.assign(holdForm, { reason: j.hold.reason, note: j.hold.note || '', partsEta: toDateInput(j.hold.partsEta), resumeDate: toDateInput(j.hold.resumeDate) })
   }
 })
 
 const actor = computed(() => actorOf(authState))
 const isOpen = computed(() => job.value && !['completed', 'cancelled'].includes(job.value.status))
-const canEdit = computed(() => isTech.value || job.value?.assigneeUid === authState.user?.uid)
+const canEdit = computed(() => isTech.value || assigneeKeys.value.some((k) => job.value?.assignees?.[k]))
+const addable = computed(() => staff.value.filter((s) => !job.value?.assignees?.[s.key]))
 
 async function run(key, fn, ok = true) {
   busy.value = key
@@ -72,10 +82,15 @@ const saveHold = () => run('hold', () => putOnHold(job.value, {
 const complete = () => run('complete', () => changeStatus(job.value, 'completed', actor.value, { note: workDetail.value, extra: { workDetail: workDetail.value } }))
 const cancel = () => run('cancel', () => changeStatus(job.value, 'cancelled', actor.value, { note: cancelReason.value }))
 const saveExpected = () => run('expected', () => setExpected(job.value, fromDateInput(expForm.date), expForm.note, actor.value))
-function doAssign() {
-  const s = staff.value.find((x) => x.uid === assignee.value)
+async function doAssign() {
+  const s = staff.value.find((x) => x.key === assignee.value)
   if (!s) return
-  run('assign', () => assignJob(job.value, s, actor.value))
+  await run('assign', () => addAssignee(job.value, s, actor.value))
+  assignee.value = ''
+}
+function unassign(key, name) {
+  if (!confirm(t('actions.removeAssignee', { name }))) return
+  run('unassign', () => removeAssignee(job.value, key, actor.value))
 }
 const setPriority = (p) => run('priority', () => applyJobChange(job.value, { priority: p }, { type: 'comment', note: `${t('request.priority')}: ${t('priority.' + p)}`, public: false }, actor.value))
 async function sendComment() {
@@ -87,6 +102,28 @@ async function uploadPhotos() {
   await run('photos', () => addPhotos(job.value, newPhotos.value, actor.value))
   newPhotos.value = []
 }
+/* เครื่องจักร / วัสดุอุปกรณ์ on this job (staff) */
+const asset = computed(() => job.value?.assetId && inv.assets[job.value.assetId] ? { id: job.value.assetId, ...inv.assets[job.value.assetId] } : null)
+const assetChoices = computed(() => assetList.value.filter((a) => !job.value?.buildingId || a.buildingId === job.value.buildingId || a.id === job.value.assetId))
+const setAsset = (aid) => run('asset', () => applyJobChange(job.value, { assetId: aid || null },
+  { type: 'comment', note: `${t('asset.one')}: ${aid ? inv.assets[aid]?.code + ' ' + inv.assets[aid]?.name : '-'}`, public: false }, actor.value))
+const matForm = reactive({ materialId: '', qty: 1 })
+const activeMaterials = computed(() => materialList.value.filter((m) => m.active !== false))
+async function issueMaterial() {
+  const m = inv.materials[matForm.materialId] && { id: matForm.materialId, ...inv.materials[matForm.materialId] }
+  if (!m || !(Number(matForm.qty) > 0)) return
+  await run('material', () => addStockMove(m, { type: 'out', qty: Number(matForm.qty), title: t('material.outFor', { no: job.value.jobNo }) }, actor.value, job.value,
+    t('material.usedNote', { name: m.name, qty: matForm.qty, unit: m.unit || '' })))
+  Object.assign(matForm, { materialId: '', qty: 1 })
+}
+const repForm = reactive({ action: 'repair', detail: '', cost: '' })
+async function logRepair() {
+  if (!asset.value || !repForm.detail.trim()) return
+  await run('repair', () => addAssetLog(asset.value, { action: repForm.action, at: Date.now(), detail: repForm.detail.trim(), qty: 1, unit: asset.value.unit || '', cost: repForm.cost === '' ? null : Number(repForm.cost) },
+    actor.value, job.value, `${t('asset.log')} ${asset.value.code}: ${repForm.detail.trim()}`))
+  Object.assign(repForm, { action: 'repair', detail: '', cost: '' })
+}
+
 async function deletePhoto(pid, meta) {
   if (!confirm(t('common.delete') + '?')) return
   await deleteJobPhotoBlob(job.value.id, pid, meta)
@@ -105,7 +142,7 @@ async function deletePhoto(pid, meta) {
         <div class="is-flex is-justify-content-space-between is-align-items-start mt-2 mb-2 is-flex-wrap-wrap" style="gap:.5rem">
           <div>
             <h1 class="title is-4 mb-1">{{ job.jobNo }}</h1>
-            <p class="is-size-7 has-text-grey">{{ $t('request.trackingCode') }}: <router-link :to="'/t/' + job.trackingCode" class="has-text-weight-bold">{{ job.trackingCode }}</router-link></p>
+            <router-link :to="'/t/' + job.jobNo" class="is-size-7"><i class="mdi mdi-open-in-new"></i> {{ $t('jobs.publicPage') }}</router-link>
           </div>
           <StatusTag :status="job.status" size="is-medium" />
         </div>
@@ -132,8 +169,25 @@ async function deletePhoto(pid, meta) {
                     <a :href="'tel:' + job.reporter?.phone"><i class="mdi mdi-phone"></i> {{ job.reporter?.phone }}</a> ·
                     <a :href="'mailto:' + job.reporter?.email"><i class="mdi mdi-email"></i> {{ job.reporter?.email }}</a>
                   </td></tr>
-                  <tr><th>{{ $t('jobs.assignee') }}</th><td>{{ job.assigneeName || $t('jobs.unassigned') }}</td></tr>
+                  <tr><th>{{ $t('jobs.assignee') }}</th><td>
+                    <div v-if="job.assignees" class="tags mb-0">
+                      <span v-for="(name, key) in job.assignees" :key="key" class="tag is-primary is-light">
+                        {{ name }}<button v-if="isTech" class="delete is-small" :title="$t('common.delete')" @click="unassign(key, name)"></button>
+                      </span>
+                    </div>
+                    <span v-else>{{ job.assigneeName || $t('jobs.unassigned') }}</span>
+                  </td></tr>
                   <tr v-if="job.completedAt"><th>{{ $t('status.completed') }}</th><td>{{ fmtDate(job.completedAt) }}</td></tr>
+                  <tr v-if="isTech || job.assetId"><th>{{ $t('asset.one') }}</th><td>
+                    <div v-if="isTech" class="select is-small" style="max-width:100%"><select :value="job.assetId || ''" @change="setAsset($event.target.value)">
+                      <option value="">-</option>
+                      <option v-for="a in assetChoices" :key="a.id" :value="a.id">{{ a.code }} — {{ a.name }}</option></select></div>
+                    <router-link v-if="asset" :to="'/assets/' + asset.id" class="ml-2"><i class="mdi mdi-cog"></i> {{ $t('common.view') }}</router-link>
+                  </td></tr>
+                  <tr v-if="job.pm"><th>{{ $t('pm.one') }}</th><td>
+                    <router-link v-if="isTech" :to="'/pm/' + job.pm.planId"><i class="mdi mdi-calendar-sync"></i> {{ inv.pmPlans[job.pm.planId]?.code || job.pm.planId }}</router-link>
+                    {{ inv.pmPlans[job.pm.planId]?.title }} · {{ fmtDate(job.pm.at) }}
+                  </td></tr>
                 </tbody>
               </table>
               <p class="has-text-weight-semibold is-size-7 mb-1">{{ $t('request.description') }}</p>
@@ -160,6 +214,36 @@ async function deletePhoto(pid, meta) {
               </div>
             </div>
 
+            <div class="box" v-if="isTech">
+              <h2 class="title is-6">{{ $t('material.used') }}</h2>
+              <p v-if="!used.length && !repairs.length" class="has-text-grey is-size-7 mb-2">{{ $t('common.noData') }}</p>
+              <p v-for="m in used" :key="m.id" class="is-size-7 mb-1">
+                <router-link :to="'/materials/' + m.materialId">{{ m.code }}</router-link> {{ m.name }} ·
+                <strong :class="m.delta < 0 ? 'has-text-danger' : 'has-text-success'">{{ m.delta }}</strong> {{ m.unit }}
+                <span class="has-text-grey">· {{ fmtDate(m.at, false) }} {{ m.byName }}</span>
+              </p>
+              <p v-for="l in repairs" :key="l.id" class="is-size-7 mb-1">
+                <i class="mdi mdi-cog"></i> <router-link :to="'/assets/' + l.assetId">{{ inv.assets[l.assetId]?.code || l.assetId }}</router-link>
+                <span class="tag is-light mx-1">{{ $t('assetAction.' + (l.action || 'other')) }}</span>{{ l.detail }}
+                <span class="has-text-grey">· {{ fmtDate(l.at, false) }}</span>
+              </p>
+              <form class="field has-addons mt-3" @submit.prevent="issueMaterial">
+                <div class="control is-expanded"><div class="select is-small is-fullwidth"><select v-model="matForm.materialId">
+                  <option value="">{{ $t('material.issue') }}…</option>
+                  <option v-for="m in activeMaterials" :key="m.id" :value="m.id">{{ m.code }} {{ m.name }} ({{ m.onHand ?? 0 }} {{ m.unit }})</option></select></div></div>
+                <div class="control"><input class="input is-small" type="number" min="1" v-model="matForm.qty" style="width:4.5rem" /></div>
+                <div class="control"><button class="button is-small is-danger is-light" :disabled="!matForm.materialId" :class="{ 'is-loading': busy === 'material' }">{{ $t('material.out') }}</button></div>
+              </form>
+              <form v-if="asset" class="mt-2" @submit.prevent="logRepair">
+                <div class="field has-addons mb-1">
+                  <div class="control"><div class="select is-small"><select v-model="repForm.action"><option v-for="a in ASSET_ACTIONS" :key="a" :value="a">{{ $t('assetAction.' + a) }}</option></select></div></div>
+                  <div class="control is-expanded"><input class="input is-small" v-model="repForm.detail" maxlength="3000" :placeholder="$t('asset.logPh', { code: asset.code })" /></div>
+                  <div class="control"><input class="input is-small" type="number" min="0" step="any" v-model="repForm.cost" :placeholder="$t('asset.cost')" style="width:6rem" /></div>
+                  <div class="control"><button class="button is-small is-primary is-light" :disabled="!repForm.detail.trim()" :class="{ 'is-loading': busy === 'repair' }">{{ $t('common.save') }}</button></div>
+                </div>
+              </form>
+            </div>
+
             <div class="box">
               <h2 class="title is-6">{{ $t('jobs.timeline') }}</h2>
               <form @submit.prevent="sendComment" class="mb-4" v-if="canEdit">
@@ -183,10 +267,10 @@ async function deletePhoto(pid, meta) {
 
               <div v-if="isTech && isOpen" class="field has-addons">
                 <div class="control is-expanded"><div class="select is-fullwidth is-small"><select v-model="assignee">
-                  <option value="">{{ $t('actions.assignTo') }}…</option>
-                  <option v-for="s in staff" :key="s.uid" :value="s.uid">{{ s.name }} ({{ $t('roles.' + s.role) }}{{ s.company ? ' · ' + s.company : '' }})</option>
+                  <option value="">{{ $t('actions.addAssignee') }}…</option>
+                  <option v-for="s in addable" :key="s.key" :value="s.key">{{ s.name }} ({{ $t('roles.' + s.role) }}{{ s.company ? ' · ' + s.company : '' }}{{ s.noAccount ? ' · ' + $t('users.noAccount') : '' }})</option>
                 </select></div></div>
-                <div class="control"><button class="button is-small is-primary" :disabled="!assignee || assignee === job.assigneeUid" :class="{ 'is-loading': busy === 'assign' }" @click="doAssign">{{ $t('actions.assign') }}</button></div>
+                <div class="control"><button class="button is-small is-primary" :disabled="!assignee" :class="{ 'is-loading': busy === 'assign' }" @click="doAssign"><span class="icon"><i class="mdi mdi-account-plus"></i></span><span>{{ $t('actions.add') }}</span></button></div>
               </div>
 
               <div class="buttons is-stacked-mobile">

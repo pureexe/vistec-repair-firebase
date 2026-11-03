@@ -16,7 +16,7 @@ onBeforeUnmount(unsub)
       </div>
       <p v-if="jobs === null"><i class="mdi mdi-loading mdi-spin"></i> {{ $t('common.loading') }}</p>
       <p v-else-if="!jobs.length" class="has-text-grey">{{ $t('jobs.empty') }}</p>
-      <router-link v-for="j in jobs" :key="j.id" :to="'/t/' + j.trackingCode" class="has-text-dark"><JobCard :job="j" /></router-link>
+      <router-link v-for="j in jobs" :key="j.id" :to="'/t/' + j.jobNo" class="has-text-dark"><JobCard :job="j" /></router-link>
     </div>
   </section>
 </template>

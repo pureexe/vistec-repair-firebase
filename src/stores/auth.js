@@ -1,8 +1,8 @@
 import { reactive, computed } from 'vue'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ref as dbRef, onValue, get, update, serverTimestamp } from 'firebase/database'
+import { ref as dbRef, onValue, get, update, serverTimestamp, query, orderByChild, equalTo } from 'firebase/database'
 import { auth, db } from '../firebase.js'
-import { emailKey, STAFF_ROLES } from '../services/util.js'
+import { emailKey, toArray, STAFF_ROLES } from '../services/util.js'
 import { setLocale } from '../i18n/index.js'
 
 export const authState = reactive({ ready: false, user: null, profile: null })
@@ -11,6 +11,8 @@ export const role = computed(() => authState.profile?.role || (authState.user ? 
 export const isStaff = computed(() => STAFF_ROLES.includes(role.value))
 export const isTech = computed(() => ['technician', 'admin'].includes(role.value))
 export const isAdmin = computed(() => role.value === 'admin')
+/** Keys this person can appear under in jobs/{id}/assignees: their uid and their linked /staff record */
+export const assigneeKeys = computed(() => [authState.user?.uid, authState.profile?.staffId].filter(Boolean))
 
 let unsubProfile = null
 let readyResolve
@@ -41,6 +43,17 @@ async function ensureProfile(u) {
         await update(pref, patch)
       }
     } catch (e) { /* no invite / not verified */ }
+  }
+  // A /staff record the admin left for this e-mail (e.g. a CPFM technician) → link it, so the jobs it was
+  // assigned become this person's. Rules check the verified e-mail.
+  if (u.email && u.emailVerified) {
+    try {
+      if (!(await get(dbRef(db, `users/${u.uid}/staffId`))).exists()) {
+        const s = await get(query(dbRef(db, 'staff'), orderByChild('email'), equalTo(u.email.toLowerCase())))
+        const hit = toArray(s.val()).find((x) => !x.uid)
+        if (hit) await update(dbRef(db), { [`staff/${hit.id}/uid`]: u.uid, [`users/${u.uid}/staffId`]: hit.id })
+      }
+    } catch (e) { console.warn('staff link', e) }
   }
 }
 

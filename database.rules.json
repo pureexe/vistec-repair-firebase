@@ -5,7 +5,10 @@
     "config": {
       "public": {
         ".read": true,
-        ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')"
+        ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        "jobPrefix": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}$/)"
+        }
       }
     },
     "users": {
@@ -36,6 +39,9 @@
         "company": {
           ".validate": "newData.isString() && newData.val().length <= 120"
         },
+        "staffId": {
+          ".validate": "newData.isString() && ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin') || (!data.exists() && newData.parent().parent().parent().child('staff').child(newData.val()).child('uid').val() == $uid))"
+        },
         "lang": {
           ".validate": "newData.isString() && newData.val().matches(/^(th|en)$/)"
         },
@@ -61,6 +67,66 @@
         ".read": "auth != null && auth.token.email != null && $key == auth.token.email.toLowerCase().replace('.', ',')",
         ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
         ".validate": "newData.hasChildren(['email', 'role']) && newData.child('role').val().matches(/^(contractor|technician)$/)"
+      }
+    },
+    "staff": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && auth.token.email != null && query.orderByChild == 'email' && query.equalTo == auth.token.email.toLowerCase())",
+      ".indexOn": [
+        "email",
+        "uid"
+      ],
+      "$id": {
+        ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "newData.hasChildren(['name'])",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length <= 200 && newData.val() == newData.val().toLowerCase()"
+        },
+        "uid": {
+          ".write": "auth != null && !data.exists() && newData.val() == auth.uid && auth.token.email_verified == true && root.child('staff').child($id).child('email').val() == auth.token.email.toLowerCase()",
+          ".validate": "newData.isString()"
+        },
+        "role": {
+          ".validate": "newData.isString() && newData.val().matches(/^(contractor|technician)$/)"
+        },
+        "company": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "phone": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "siteId": {
+          ".validate": "newData.isString()"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "order": {
+          ".validate": "newData.isNumber()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "assignments": {
+      "$key": {
+        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && ($key == auth.uid || root.child('users').child(auth.uid).child('staffId').val() == $key))",
+        "$jobId": {
+          ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".validate": "newData.val() == true"
+        }
       }
     },
     "sites": {
@@ -97,25 +163,539 @@
         ".validate": "newData.hasChildren(['nameTh'])"
       }
     },
+    "assetTypes": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      "$id": {
+        ".validate": "newData.hasChildren(['nameTh'])",
+        "parentId": {
+          ".validate": "newData.isString() && root.child('assetTypes').child(newData.val()).exists()"
+        },
+        "order": {
+          ".validate": "newData.isNumber()"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "nameTh": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "nameEn": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "checklists": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".write": "(auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      "$id": {
+        ".validate": "newData.hasChildren(['nameTh'])",
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "nameTh": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "items": {
+          "$k": {
+            ".validate": "newData.hasChildren(['label'])",
+            "order": {
+              ".validate": "newData.isNumber()"
+            },
+            "label": {
+              ".validate": "newData.isString() && newData.val().length <= 300"
+            },
+            "kind": {
+              ".validate": "newData.isString() && newData.val().length <= 20"
+            },
+            "options": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "$o": {
+              ".validate": false
+            }
+          }
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "assets": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".indexOn": [
+        "code",
+        "buildingId"
+      ],
+      "$id": {
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+        ".validate": "newData.hasChildren(['code', 'name'])",
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 80 && newData.val().length > 0"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 200 && newData.val().length > 0"
+        },
+        "locationDetail": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "brand": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "model": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "serial": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "supplier": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "unit": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "detail": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "remark": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "typeId": {
+          ".validate": "newData.isString() && root.child('assetTypes').child(newData.val()).exists()"
+        },
+        "siteId": {
+          ".validate": "newData.isString() && root.child('sites').child(newData.val()).exists()"
+        },
+        "buildingId": {
+          ".validate": "newData.isString() && root.child('buildings').child(newData.val()).exists()"
+        },
+        "areaId": {
+          ".validate": "newData.isString()"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().matches(/^(normal|repair|written_off|expired)$/)"
+        },
+        "qty": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "price": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "warrantyYears": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "lifeYears": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "installedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "pm": {
+          ".validate": "newData.isBoolean()"
+        },
+        "qm": {
+          ".validate": "newData.isBoolean()"
+        },
+        "checklistId": {
+          ".validate": "newData.isString() && root.child('checklists').child(newData.val()).exists()"
+        },
+        "history": {
+          "$h": {
+            ".validate": "newData.hasChildren(['at', 'note']) && !data.exists()",
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 3000"
+            }
+          }
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "files": {
+          ".validate": false
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "assetLogs": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".indexOn": [
+        "assetId",
+        "jobId"
+      ],
+      "$id": {
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+        ".validate": "newData.hasChildren(['assetId', 'action', 'at'])",
+        "assetId": {
+          ".validate": "newData.isString() && root.child('assets').child(newData.val()).exists()"
+        },
+        "action": {
+          ".validate": "newData.isString() && newData.val().matches(/^(pm|repair|change|transfer|install|other)$/)"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "qty": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "cost": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "detail": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "unit": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "downtime": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "jobNo": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "byName": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "jobId": {
+          ".validate": "newData.isString() && root.child('jobs').child(newData.val()).exists()"
+        },
+        "byUid": {
+          ".validate": "newData.val() == auth.uid"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "materials": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".indexOn": [
+        "code"
+      ],
+      "$id": {
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+        ".validate": "newData.hasChildren(['code', 'name'])",
+        "store": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "brand": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "model": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "serial": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "supplier": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "unit": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "detail": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "remark": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 80 && newData.val().length > 0"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 200 && newData.val().length > 0"
+        },
+        "typeId": {
+          ".validate": "newData.isString() && root.child('assetTypes').child(newData.val()).exists()"
+        },
+        "price": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "min": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "max": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "onHand": {
+          ".validate": "newData.isNumber()"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "history": {
+          "$h": {
+            ".validate": "newData.hasChildren(['at', 'note']) && !data.exists()",
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 3000"
+            }
+          }
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "files": {
+          ".validate": false
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "stockMoves": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      ".indexOn": [
+        "materialId",
+        "jobId"
+      ],
+      "$id": {
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && ((!data.exists() && newData.exists()) || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+        ".validate": "newData.hasChildren(['materialId', 'type', 'qty', 'delta', 'at']) && (newData.child('type').val() == 'in' ? newData.child('delta').val() == newData.child('qty').val() : newData.child('delta').val() + newData.child('qty').val() == 0)",
+        "materialId": {
+          ".validate": "newData.isString() && root.child('materials').child(newData.val()).exists()"
+        },
+        "type": {
+          ".validate": "newData.isString() && newData.val().matches(/^(in|out)$/)"
+        },
+        "qty": {
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
+        "delta": {
+          ".validate": "newData.isNumber()"
+        },
+        "price": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "total": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "unit": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "store": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "detail": {
+          ".validate": "newData.isString() && newData.val().length <= 1000"
+        },
+        "jobNo": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "byName": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "siteId": {
+          ".validate": "newData.isString() && root.child('sites').child(newData.val()).exists()"
+        },
+        "buildingId": {
+          ".validate": "newData.isString() && root.child('buildings').child(newData.val()).exists()"
+        },
+        "areaId": {
+          ".validate": "newData.isString()"
+        },
+        "jobId": {
+          ".validate": "newData.isString() && root.child('jobs').child(newData.val()).exists()"
+        },
+        "byUid": {
+          ".validate": "newData.val() == auth.uid"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "pmPlans": {
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+      "$id": {
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+        ".validate": "newData.hasChildren(['code', 'title', 'start', 'buildingId', 'jobTypeId']) && (!data.exists() || newData.child('code').val() == data.child('code').val())",
+        "code": {
+          ".validate": "newData.isString() && newData.val().matches(/^PM20[0-9][0-9]-[0-9]{4,}$/)"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length <= 200 && newData.val().length > 0"
+        },
+        "detail": {
+          ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "siteId": {
+          ".validate": "newData.isString() && root.child('sites').child(newData.val()).exists()"
+        },
+        "buildingId": {
+          ".validate": "newData.isString() && root.child('buildings').child(newData.val()).exists()"
+        },
+        "areaId": {
+          ".validate": "newData.isString()"
+        },
+        "jobTypeId": {
+          ".validate": "newData.isString() && root.child('jobTypes').child(newData.val()).exists()"
+        },
+        "priority": {
+          ".validate": "newData.isString() && newData.val().matches(/^(normal|urgent|low|callback)$/)"
+        },
+        "start": {
+          ".validate": "newData.isNumber()"
+        },
+        "end": {
+          ".validate": "newData.isNumber()"
+        },
+        "lastAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "repeat": {
+          ".validate": "newData.isString() && newData.val().matches(/^(none|minute|hour|day|week|month|quarter|year)$/)"
+        },
+        "every": {
+          ".validate": "newData.isNumber() && newData.val() >= 1"
+        },
+        "remind": {
+          "n": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "unit": {
+            ".validate": "newData.isString() && newData.val().matches(/^(minute|hour|day|week)$/)"
+          },
+          "$o": {
+            ".validate": false
+          }
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "checklistId": {
+          ".validate": "newData.isString() && root.child('checklists').child(newData.val()).exists()"
+        },
+        "assets": {
+          "$a": {
+            ".validate": "newData.val() == true"
+          }
+        },
+        "jobs": {
+          "$at": {
+            ".validate": "$at.matches(/^[0-9]+$/) && newData.isString() && root.child('jobs').child(newData.val()).exists()"
+          }
+        },
+        "history": {
+          "$h": {
+            ".validate": "newData.hasChildren(['at', 'note']) && !data.exists()",
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 3000"
+            }
+          }
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "files": {
+          ".validate": false
+        },
+        "cpfm": {
+          ".validate": false
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "counters": {
       "jobs": {
-        "$year": {
+        "$key": {
           ".read": "auth != null",
           ".write": "auth != null",
+          ".validate": "$key.matches(/^[A-Z]{2}20[0-9][0-9]$/) && newData.isNumber() && newData.val() == (data.exists() ? data.val() + 1 : 1)"
+        }
+      },
+      "pm": {
+        "$year": {
+          ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
           ".validate": "$year.matches(/^20[0-9][0-9]$/) && newData.isNumber() && newData.val() == (data.exists() ? data.val() + 1 : 1)"
         }
       }
     },
     "jobs": {
-      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && query.orderByChild == 'reporterUid' && query.equalTo == auth.uid) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && query.orderByChild == 'assigneeUid' && query.equalTo == auth.uid)",
+      ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && query.orderByChild == 'reporterUid' && query.equalTo == auth.uid)",
       ".indexOn": [
         "createdAt",
         "status",
         "reporterUid",
-        "assigneeUid",
         "siteId",
         "jobNo",
-        "trackingCode",
+        "assetId",
+        "pm/planId",
         "idx/s",
         "idx/o",
         "idx/si",
@@ -126,14 +706,11 @@
         "idx/bo"
       ],
       "$jobId": {
-        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && (data.child('reporterUid').val() == auth.uid || data.child('assigneeUid').val() == auth.uid))",
-        ".write": "((auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))) || (auth != null && !data.exists() && newData.child('reporterUid').val() == auth.uid && newData.child('status').val() == 'new'     && !newData.hasChild('assigneeUid') && !newData.hasChild('expectedDate')     && newData.parent().parent().child('tracking').child(newData.child('trackingCode').val()).child('jobId').val() == $jobId) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && data.exists() && newData.exists() && data.child('assigneeUid').val() == auth.uid && newData.child('assigneeUid').val() == auth.uid)",
-        ".validate": "newData.hasChildren(['jobNo', 'trackingCode', 'status', 'reporterUid', 'jobTypeId', 'buildingId', 'description', 'createdAt']) && (!data.exists() || (newData.child('jobNo').val() == data.child('jobNo').val() && newData.child('trackingCode').val() == data.child('trackingCode').val() && newData.child('reporterUid').val() == data.child('reporterUid').val()))",
+        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && (data.child('reporterUid').val() == auth.uid || (auth != null && data.child('assigneeKeys').isString() && (data.child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && data.child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ','))))))",
+        ".write": "((auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) && (newData.exists() || (auth != null && root.child('users').child(auth.uid).child('role').val() == 'admin'))) || (auth != null && !data.exists() && newData.child('reporterUid').val() == auth.uid && newData.child('status').val() == 'new'     && !newData.hasChild('assigneeKeys') && !newData.hasChild('assignees') && !newData.hasChild('expectedDate')     && newData.child('jobNo').val().beginsWith(root.child('config').child('public').child('jobPrefix').isString() ? root.child('config').child('public').child('jobPrefix').val() + '20' : 'VR20')     && newData.parent().parent().child('tracking').child(newData.child('jobNo').val()).child('jobId').val() == $jobId) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && data.exists() && newData.exists() && (auth != null && data.child('assigneeKeys').isString() && (data.child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && data.child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ',')))) && newData.child('assigneeKeys').val() == data.child('assigneeKeys').val())",
+        ".validate": "newData.hasChildren(['jobNo', 'status', 'reporterUid', 'jobTypeId', 'buildingId', 'description', 'createdAt']) && (!data.exists() || (newData.child('jobNo').val() == data.child('jobNo').val() && newData.child('reporterUid').val() == data.child('reporterUid').val()))",
         "jobNo": {
-          ".validate": "newData.isString() && newData.val().matches(/^WO20[0-9][0-9]-[0-9]{4,}$/)"
-        },
-        "trackingCode": {
-          ".validate": "newData.isString() && newData.val().matches(/^[A-Z0-9]{8}$/)"
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}20[0-9][0-9]-[0-9]{4,}$/)"
         },
         "status": {
           ".validate": "newData.isString() && newData.val().matches(/^(new|assigned|in_progress|on_hold|completed|cancelled)$/)"
@@ -204,11 +781,16 @@
         "pdpaAt": {
           ".validate": "newData.isNumber() && newData.val() <= now + 60000"
         },
-        "assigneeUid": {
-          ".validate": "newData.isString()"
+        "assignees": {
+          "$k": {
+            ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
+          }
+        },
+        "assigneeKeys": {
+          ".validate": "newData.isString() && newData.val().length <= 2000 && newData.val().matches(/^,([-_A-Za-z0-9]+,)+$/)"
         },
         "assigneeName": {
-          ".validate": "newData.isString() && newData.val().length <= 120"
+          ".validate": "newData.isString() && newData.val().length <= 300"
         },
         "expectedDate": {
           ".validate": "newData.isNumber()"
@@ -238,6 +820,21 @@
         },
         "workDetail": {
           ".validate": "newData.isString() && newData.val().length <= 3000"
+        },
+        "assetId": {
+          ".validate": "newData.isString() && root.child('assets').child(newData.val()).exists()"
+        },
+        "pm": {
+          ".validate": "newData.hasChildren(['planId', 'at'])",
+          "planId": {
+            ".validate": "newData.isString() && root.child('pmPlans').child(newData.val()).exists()"
+          },
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "$o": {
+            ".validate": false
+          }
         },
         "photos": {
           "$pid": {
@@ -273,19 +870,19 @@
     },
     "jobPhotos": {
       "$jobId": {
-        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && (root.child('jobs').child($jobId).child('reporterUid').val() == auth.uid || root.child('jobs').child($jobId).child('assigneeUid').val() == auth.uid))",
+        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && root.child('jobs').child($jobId).child('reporterUid').val() == auth.uid) || (auth != null && root.child('jobs').child($jobId).child('assigneeKeys').isString() && (root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ','))))",
         "$pid": {
-          ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && (root.child('jobs').child($jobId).child('reporterUid').val() == auth.uid || root.child('jobs').child($jobId).child('assigneeUid').val() == auth.uid))",
+          ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && root.child('jobs').child($jobId).child('reporterUid').val() == auth.uid) || (auth != null && root.child('jobs').child($jobId).child('assigneeKeys').isString() && (root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ','))))",
           ".validate": "newData.isString() && newData.val().beginsWith('data:image/webp;base64,') && newData.val().length < 560000"
         }
       }
     },
     "jobEvents": {
       "$jobId": {
-        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && root.child('jobs').child($jobId).child('assigneeUid').val() == auth.uid)",
+        ".read": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && root.child('jobs').child($jobId).child('assigneeKeys').isString() && (root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && root.child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ','))))",
         "$eventId": {
-          ".write": "auth != null && !data.exists() && newData.child('byUid').val() == auth.uid && ((auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && newData.parent().parent().parent().child('jobs').child($jobId).child('assigneeUid').val() == auth.uid) || (newData.parent().parent().parent().child('jobs').child($jobId).child('reporterUid').val() == auth.uid     && newData.child('public').val() == true && newData.child('type').val().matches(/^(created|comment)$/)))",
-          ".validate": "newData.hasChildren(['at', 'byUid', 'type', 'public']) && newData.child('type').val().matches(/^(created|status|assign|expected|hold|comment|photo)$/)",
+          ".write": "auth != null && !data.exists() && newData.child('byUid').val() == auth.uid && ((auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && (auth != null && newData.parent().parent().parent().child('jobs').child($jobId).child('assigneeKeys').isString() && (newData.parent().parent().parent().child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && newData.parent().parent().parent().child('jobs').child($jobId).child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ','))))) || (newData.parent().parent().parent().child('jobs').child($jobId).child('reporterUid').val() == auth.uid     && newData.child('public').val() == true && newData.child('type').val().matches(/^(created|comment)$/)))",
+          ".validate": "newData.hasChildren(['at', 'byUid', 'type', 'public']) && newData.child('type').val().matches(/^(created|status|assign|unassign|expected|hold|comment|photo)$/)",
           "at": {
             ".validate": "newData.isNumber() && newData.val() <= now + 60000"
           },
@@ -302,10 +899,10 @@
       }
     },
     "tracking": {
-      "$code": {
+      "$no": {
         ".read": true,
-        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && !data.exists() && newData.parent().parent().child('jobs').child(newData.child('jobId').val()).child('reporterUid').val() == auth.uid     && newData.parent().parent().child('jobs').child(newData.child('jobId').val()).child('trackingCode').val() == $code) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && data.exists() && newData.exists() && root.child('jobs').child(data.child('jobId').val()).child('assigneeUid').val() == auth.uid)",
-        ".validate": "newData.hasChildren(['jobId', 'jobNo', 'status']) && $code.matches(/^[A-Z0-9]{8}$/) && (!data.exists() || newData.child('jobId').val() == data.child('jobId').val())",
+        ".write": "(auth != null && (root.child('users').child(auth.uid).child('role').val() == 'technician' || root.child('users').child(auth.uid).child('role').val() == 'admin')) || (auth != null && !data.exists() && newData.parent().parent().child('jobs').child(newData.child('jobId').val()).child('reporterUid').val() == auth.uid     && newData.parent().parent().child('jobs').child(newData.child('jobId').val()).child('jobNo').val() == $no) || ((auth != null && root.child('users').child(auth.uid).child('role').val() == 'contractor') && data.exists() && newData.exists() && (auth != null && root.child('jobs').child(data.child('jobId').val()).child('assigneeKeys').isString() && (root.child('jobs').child(data.child('jobId').val()).child('assigneeKeys').val().contains(',' + auth.uid + ',') || (root.child('users').child(auth.uid).child('staffId').isString() && root.child('jobs').child(data.child('jobId').val()).child('assigneeKeys').val().contains(',' + root.child('users').child(auth.uid).child('staffId').val() + ',')))))",
+        ".validate": "newData.hasChildren(['jobId', 'jobNo', 'status']) && newData.child('jobNo').val() == $no && (!data.exists() || newData.child('jobId').val() == data.child('jobId').val())",
         "status": {
           ".validate": "newData.isString() && newData.val().matches(/^(new|assigned|in_progress|on_hold|completed|cancelled)$/)"
         },

@@ -1,7 +1,7 @@
 # TODO.md — progress tracker
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` needs the client
-Last updated: 2026-11-01 (Claude, CPFM import + multi-site)
+Last updated: 2026-11-03 (Claude, PM + assets & inventory)
 
 ## Phase 0 — planning
 - [x] Read notes (`note-vistec-repair-system/*.md`)
@@ -83,12 +83,50 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
             and every photo/job added in CPFM after 1 Nov 2026. Expect ≈3,831 + ~110 per month since then (< 5,000).
 - [ ] Until the switch-over from CPFM, run the monthly sync (AGENTS.md → "Monthly CPFM sync"). CPFM is still in use.
 
+## Phase 3c — one job number, several ผู้ปฏิบัติงาน, staff placeholders (2026-11-02)
+- [x] The job number is the only tracking id: `/tracking/{jobNo}`, `trackingCode` removed. App jobs use their own
+      prefix (`VR2026-0001`, `/config/public/jobPrefix`) while CPFM still issues `WO…`, so numbers never collide.
+- [x] Several assignees per job, add / remove (`jobs/*/assignees`, `assigneeKeys`, `/assignments/{key}/{jobId}`)
+- [x] `/staff` records: CPFM technicians imported as placeholders; linked to an account automatically when someone signs
+      in with the e-mail the admin entered, or by the admin directly (Users page)
+- [x] Rules tests (80 pass) and an end-to-end run on the emulator (old data migrated, add/remove, VR number, auto-link)
+- [ ] **Live:** ~~publish `database.rules.json`~~ (done 3 Nov), deploy the app, then `npm run import:cpfm -- --yes` once to move the
+      25.5k imported jobs to `tracking/{jobNo}` + `assignees` (writes only, no Storage uploads). The old random tracking
+      links stop working (no e-mails were ever sent with them: Cloud Functions are not deployed).
+- [ ] Admin: enter the e-mail of each CPFM technician on the Users page so their accounts link when they sign in
+
+## Phase 3d — การบำรุงรักษา (PM) + เครื่องจักรและอุปกรณ์ (2026-11-03)
+- [x] DB: `/assetTypes`, `/checklists`, `/assets`, `/assetLogs`, `/materials`, `/stockMoves`, `/pmPlans`, `counters/pm`,
+      `jobs/*/assetId`, `jobs/*/pm` (DB.md). Rules + 37 new emulator cases (117 pass)
+- [x] เครื่องจักรและอุปกรณ์: list (search, site / building / system / status filters), detail + edit, repair /
+      maintenance log (changes the status), work orders for the machine, PM plans using it, check list, history
+- [x] วัสดุอุปกรณ์: list (on-hand red at ≤ min, reorder suggestion, store filter, low-stock filter), detail + edit,
+      Stock Card with stock in / issue (optionally to a job number)
+- [x] Job page: machine picker, PM plan link, "materials and repairs on this job" with issue-stock and repair-log forms
+- [x] PM: plan list, plan detail + edit (repeat rule, machines, tasks, check list, reminder), due dates per year with
+      "create work order", "Gen. Job ถึง [date]" for all plans, PM calendar (month grid, list on phones, colour per building)
+- [x] Master data: asset categories (group → type)
+- [x] Importer `--only=jobs,assets,pm`: asset categories, brands, check lists, 384 assets + repair log, 71 materials
+      (+ codes only on the stock card), 835 stock lines with job links, 8 PM plans + machines. CPFM_IMPORT.md
+- [x] Live import 3 Nov 2026 (`--only=assets,pm --yes`): 58 asset types, 1 check list, 384 assets, 20 repair-log lines,
+      142 materials (71 + 71 codes only on the stock card), 835 stock lines (366 linked to WO jobs), 8 PM plans. Re-run = 0 changes.
+      The run also created the 20 `/staff` records (master data is always refreshed).
+- [x] Live rules published 3 Nov 2026 (checked: identical to `database.rules.json`; anonymous reads of assets / materials /
+      stockMoves / pmPlans / staff / jobs are denied). This also published the Phase 3c rules.
+- [ ] PM2021-0001 (a 2021 test plan in CPFM) has calendar dates that don't follow its repeat rule; we show the rule's dates
+- [ ] PM reminder e-mails (`remind` is stored, nothing sends it) and auto-generating work orders (scheduled Function)
+- [ ] Fill in a check list on a PM work order (CPFM has templates but no results to import)
+- [ ] Edit check-list templates in the app (imported from CPFM; read-only here)
+- [ ] Dashboard filter งานแจ้ง / PM, reports REPORT-02 (repairs by machine), REPORT-08/09 (PM)
+- [ ] QR code per machine → its page / a work order for it
+- [ ] Monthly sync keeps these in step: the default run (no `--only`) includes assets and PM
+
 ## Phase 4 — later
 - [ ] Satisfaction survey after completion (6 criteria, see CPFM §4.2) — e-mail link + `/survey/:code`
 - [ ] SLA per job type + due date / overdue counter
-- [ ] Assets & equipment register
-- [ ] Materials / stock card
-- [ ] Preventive maintenance plans + calendar
+- [x] Assets & equipment register (Phase 3d)
+- [x] Materials / stock card (Phase 3d)
+- [x] Preventive maintenance plans + calendar (Phase 3d)
 - [ ] Reports + Excel export, print work-order sheet
-- [ ] Import CPFM attachments (none seen in 2000 sampled jobs), ratings → survey, materials/expenses tabs
+- [ ] Import CPFM ratings → survey. (Attachments, materials and repair-log tabs are imported. Expenses: 1 test row in all of CPFM, skipped)
 - [ ] PWA (installable, offline shell)

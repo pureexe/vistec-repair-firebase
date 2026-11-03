@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { ref as dbRef, get } from 'firebase/database'
 import { db } from '../firebase.js'
 import { listenTracking, addComment, actorOf } from '../services/jobs.js'
-import { normalizeCode, toArray } from '../services/util.js'
+import { normalizeJobNo, toArray } from '../services/util.js'
 import { master, placeName } from '../stores/master.js'
 import { authState, isStaff } from '../stores/auth.js'
 import { ln, fmtDate } from '../i18n/index.js'
@@ -29,13 +29,13 @@ const sending = ref(false)
 const copied = ref(false)
 let unsub = null
 
-const code = computed(() => normalizeCode(route.params.code))
+const code = computed(() => normalizeJobNo(route.params.code))
 const timeline = computed(() => toArray(data.value?.timeline).sort((a, b) => (b.at || 0) - (a.at || 0)))
 
 watch([code, () => authState.user], ([c]) => {
   if (unsub) { unsub(); unsub = null }
   data.value = null; notFound.value = false; ownJob.value = null
-  if (!c) return
+  if (!c) { notFound.value = !!route.params.code; return }
   input.value = c
   loading.value = true
   unsub = listenTracking(c, async (v) => {
@@ -48,7 +48,7 @@ watch([code, () => authState.user], ([c]) => {
 }, { immediate: true })
 onBeforeUnmount(() => unsub && unsub())
 
-const lookup = () => { const c = normalizeCode(input.value); if (c) router.push('/t/' + c) }
+const lookup = () => { const c = normalizeJobNo(input.value); if (c) router.push('/t/' + c); else notFound.value = true }
 async function send() {
   if (!comment.value.trim()) return
   sending.value = true
@@ -65,7 +65,7 @@ async function share() {
   <section class="section">
     <div class="container" style="max-width:720px">
       <form @submit.prevent="lookup" class="field has-addons mb-4">
-        <div class="control is-expanded"><input class="input tracking-code" style="font-size:1.05rem" v-model="input" :placeholder="$t('home.trackPlaceholder')" autocapitalize="characters" maxlength="12" /></div>
+        <div class="control is-expanded"><input class="input tracking-code" style="font-size:1.05rem" v-model="input" :placeholder="$t('home.trackPlaceholder')" autocapitalize="characters" maxlength="14" /></div>
         <div class="control"><button class="button is-primary">{{ $t('track.lookup') }}</button></div>
       </form>
 
