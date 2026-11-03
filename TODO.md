@@ -90,9 +90,11 @@ Verified against the live project `vistec-repair` with the API key from `.env`:
 - [x] `/staff` records: CPFM technicians imported as placeholders; linked to an account automatically when someone signs
       in with the e-mail the admin entered, or by the admin directly (Users page)
 - [x] Rules tests (80 pass) and an end-to-end run on the emulator (old data migrated, add/remove, VR number, auto-link)
-- [ ] **Live:** ~~publish `database.rules.json`~~ (done 3 Nov), deploy the app, then `npm run import:cpfm -- --yes` once to move the
-      25.5k imported jobs to `tracking/{jobNo}` + `assignees` (writes only, no Storage uploads). The old random tracking
-      links stop working (no e-mails were ever sent with them: Cloud Functions are not deployed).
+- [x] **Live** 3 Nov 2026: rules published, then `npm run import:cpfm -- --photos-since=2026-11-01 --yes` moved the
+      25,509 imported jobs to `tracking/{jobNo}` (25,519 entries, all keyed by job number) + `assignees`, 112 `/staff`
+      records. 4 Storage uploads; the ≈3,831 pre-2023-11 photos are still links, stored by the December sync (Phase 3b).
+- [ ] Deploy the app (hosting is not set up yet)
+- [x] Profile: change password and change e-mail (confirmation link to the new address) for e-mail / password accounts
 - [ ] Admin: enter the e-mail of each CPFM technician on the Users page so their accounts link when they sign in
 
 ## Phase 3d — การบำรุงรักษา (PM) + เครื่องจักรและอุปกรณ์ (2026-11-03)

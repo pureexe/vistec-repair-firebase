@@ -2,7 +2,7 @@ import {
   OAuthProvider, GoogleAuthProvider, signInWithPopup, signInWithRedirect, linkWithPopup, unlink,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification,
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, updateProfile, signOut,
-  EmailAuthProvider, linkWithCredential
+  EmailAuthProvider, linkWithCredential, reauthenticateWithCredential, updatePassword, verifyBeforeUpdateEmail
 } from 'firebase/auth'
 import { auth, MS_TENANT } from '../firebase.js'
 
@@ -56,6 +56,18 @@ export const linkProvider = (id) => linkWithPopup(auth.currentUser, providerFor(
 export const linkPassword = (password) =>
   linkWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, password))
 export const unlinkProvider = (id) => unlink(auth.currentUser, id)
+
+// Changing the password or e-mail needs a recent sign-in, so both ask for the current password first.
+const reauth = (current) => reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, current))
+export async function changePassword(current, next) {
+  await reauth(current)
+  await updatePassword(auth.currentUser, next)
+}
+/** Sends a confirmation link to the new address; the e-mail changes only when it is clicked (then sign in again). */
+export async function changeEmail(current, newEmail) {
+  await reauth(current)
+  await verifyBeforeUpdateEmail(auth.currentUser, newEmail, { url: location.origin + '/profile' })
+}
 export const logout = () => signOut(auth)
 
 /** Turn Firebase auth errors into a friendly message key / text */
@@ -69,6 +81,10 @@ export function authErrorMessage(e, t) {
     'auth/user-not-found': 'auth.badCredential',
     'auth/email-already-in-use': 'auth.emailInUse',
     'auth/weak-password': 'auth.weakPassword',
+    'auth/missing-password': 'auth.badCredential',
+    'auth/invalid-email': 'auth.invalidEmail',
+    'auth/too-many-requests': 'auth.tooMany',
+    'auth/requires-recent-login': 'auth.recentLogin',
     // Project-side setup problems. These mean the Firebase console is not configured for
     // this project — not that the user typed something wrong — so say what to fix.
     'auth/configuration-not-found': 'auth.notConfigured',

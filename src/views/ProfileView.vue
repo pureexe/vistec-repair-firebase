@@ -6,7 +6,7 @@ import { updateProfile } from 'firebase/auth'
 import { auth, db, AUTH_METHODS } from '../firebase.js'
 import { authState, role } from '../stores/auth.js'
 import { setLocale } from '../i18n/index.js'
-import { linkProvider, linkPassword, unlinkProvider, authErrorMessage } from '../services/authService.js'
+import { linkProvider, linkPassword, unlinkProvider, changePassword, changeEmail, resetPassword, authErrorMessage } from '../services/authService.js'
 import { toast, toastError } from '../stores/toast.js'
 
 const { t, locale } = useI18n()
@@ -53,6 +53,27 @@ async function link(id) {
     await syncProviders(); toast(t('profile.linkedOk'))
   } catch (e) { const m = authErrorMessage(e, t); if (m) toast(m, 'is-danger', 8000) } finally { busy.value = '' }
 }
+/* e-mail / password account: change the password or the e-mail (both re-check the current password) */
+const panel = ref('') // '' | 'password' | 'email'
+const chg = reactive({ current: '', next: '', confirm: '', email: '' })
+function openPanel(p) { panel.value = panel.value === p ? '' : p; Object.assign(chg, { current: '', next: '', confirm: '', email: '' }) }
+const authError = (e) => { const m = authErrorMessage(e, t); if (m) toast(m, 'is-danger', 8000) }
+async function savePassword() {
+  if (chg.next !== chg.confirm) return toast(t('profile.passwordMismatch'), 'is-warning')
+  busy.value = 'chgPassword'
+  try { await changePassword(chg.current, chg.next); panel.value = ''; toast(t('profile.passwordChanged')) } catch (e) { authError(e) } finally { busy.value = '' }
+}
+async function saveEmail() {
+  const email = chg.email.trim().toLowerCase()
+  if (email === (auth.currentUser.email || '').toLowerCase()) return toast(t('profile.sameEmail'), 'is-warning')
+  busy.value = 'chgEmail'
+  try { await changeEmail(chg.current, email); panel.value = ''; toast(t('profile.emailSent', { email }), 'is-success', 10000) } catch (e) { authError(e) } finally { busy.value = '' }
+}
+async function sendReset() {
+  busy.value = 'reset'
+  try { await resetPassword(auth.currentUser.email); toast(t('auth.resetSent')) } catch (e) { authError(e) } finally { busy.value = '' }
+}
+
 async function unlink(id) {
   if (providers.value.length < 2) return
   busy.value = id
@@ -98,6 +119,34 @@ async function unlink(id) {
           </template>
           <button v-else class="button is-small is-primary is-light" :class="{ 'is-loading': busy === p.id }" @click="link(p.id)">{{ $t('profile.link') }}</button>
         </div>
+
+        <!-- e-mail / password account: change password, change e-mail -->
+        <template v-if="providers.includes('password')">
+          <div class="buttons mt-3 mb-0">
+            <button type="button" class="button is-small is-light" :class="{ 'is-primary': panel === 'password' }" @click="openPanel('password')"><span class="icon"><i class="mdi mdi-lock-reset"></i></span><span>{{ $t('profile.changePassword') }}</span></button>
+            <button type="button" class="button is-small is-light" :class="{ 'is-primary': panel === 'email' }" @click="openPanel('email')"><span class="icon"><i class="mdi mdi-email-edit"></i></span><span>{{ $t('profile.changeEmail') }}</span></button>
+          </div>
+          <form v-if="panel" class="mt-3 p-3 has-background-vistec-soft" style="border-radius:.5rem" @submit.prevent="panel === 'password' ? savePassword() : saveEmail()">
+            <div v-if="panel === 'email'" class="field">
+              <label class="label is-small">{{ $t('profile.newEmail') }}</label>
+              <input class="input is-small" type="email" v-model="chg.email" required maxlength="200" autocomplete="email" />
+              <p class="help">{{ $t('profile.emailHint') }}</p>
+            </div>
+            <div class="field">
+              <label class="label is-small">{{ $t('profile.currentPassword') }}</label>
+              <input class="input is-small" type="password" v-model="chg.current" required autocomplete="current-password" />
+            </div>
+            <template v-if="panel === 'password'">
+              <div class="field"><label class="label is-small">{{ $t('profile.newPassword') }}</label><input class="input is-small" type="password" v-model="chg.next" required minlength="6" autocomplete="new-password" /></div>
+              <div class="field"><label class="label is-small">{{ $t('profile.confirmPassword') }}</label><input class="input is-small" type="password" v-model="chg.confirm" required minlength="6" autocomplete="new-password" /></div>
+            </template>
+            <div class="buttons mb-1">
+              <button class="button is-primary is-small" :class="{ 'is-loading': busy === 'chgPassword' || busy === 'chgEmail' }">{{ $t('common.save') }}</button>
+              <button type="button" class="button is-small is-text" @click="panel = ''">{{ $t('common.cancel') }}</button>
+            </div>
+            <a class="is-size-7" :class="{ 'has-text-grey': busy === 'reset' }" @click="busy !== 'reset' && sendReset()"><i class="mdi mdi-email-fast"></i> {{ $t('profile.noPassword') }}</a>
+          </form>
+        </template>
       </div>
     </div>
   </section>

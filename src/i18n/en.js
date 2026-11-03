@@ -34,6 +34,7 @@ export default {
     accountExists: 'This e-mail already signed in with another method ({methods}). Sign in that way first, then link this method in your profile.',
     badCredential: 'Invalid e-mail or password',
     emailInUse: 'This e-mail is already registered — please sign in instead.',
+    invalidEmail: 'That e-mail address is not valid', tooMany: 'Too many attempts. Please wait a moment and try again', recentLogin: 'Please sign out and sign in again before doing this',
     weakPassword: 'The password must be at least 6 characters.',
     notConfigured: 'Sign-in is not set up for this Firebase project yet (auth/configuration-not-found). An administrator must open Firebase Console → Authentication → Get started, turn on the E-mail/Password provider, then copy this project\'s real web app config into .env.',
     providerDisabled: 'This sign-in method is turned off in the Firebase project. An administrator must enable it in Firebase Console → Authentication → Sign-in method.',
@@ -47,7 +48,11 @@ export default {
     title: 'My profile', phone: 'Phone', department: 'Department / School', company: 'Company',
     role: 'Role', language: 'Language', linked: 'Linked sign-in methods',
     linkHint: 'Link several methods to one account and sign in with any of them', link: 'Link', linkedOk: 'Account linked',
-    setPassword: 'Set a password for this e-mail', unlink: 'Unlink'
+    setPassword: 'Set a password for this e-mail', unlink: 'Unlink',
+    changeEmail: 'Change e-mail', changePassword: 'Change password', currentPassword: 'Current password', newPassword: 'New password (at least 6 characters)',
+    confirmPassword: 'Confirm new password', newEmail: 'New e-mail', passwordMismatch: 'The new passwords do not match', sameEmail: 'The new e-mail is the same as the current one',
+    passwordChanged: 'Password changed', emailSent: 'A confirmation link was sent to {email}. Your e-mail changes when you click it; then sign in with the new address',
+    emailHint: 'We send a confirmation link to the new address. Your e-mail changes only after you click it', noPassword: 'Forgot it, or never set a password? E-mail me a link to set one'
   },
   roles: { user: 'Reporter', contractor: 'Contractor', technician: 'Technician / staff', admin: 'Administrator' },
   status: {
